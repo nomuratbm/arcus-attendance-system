@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 export const dynamic = "force-dynamic";
 
@@ -8,44 +8,15 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 export async function GET(request: NextRequest) {
   try {
-    const uuid = request.nextUrl.searchParams.get("uuid");
+    // validate & trim QR code extraction result
+    const uuid = request.nextUrl.searchParams.get("uuid")?.trim();
 
-    // validate QR code extraction result
     if (!uuid) {
       return NextResponse.json(
         { error: "Invalid QR code: missing UUID parameter" },
         { status: 400 }
       );
     }
-
-    /* MOCK DATA (REMOVE ONLY WHEN HAVE ENV VARIABLES) */
-    if (!process.env.DYNAMODB_TABLE_NAME || !process.env.AWS_ACCESS_KEY_ID) {
-      console.warn("AWS env missing: Returning mock data for local testing.");
-
-      if (uuid !== "001") {
-        return NextResponse.json(
-          { error: "Member not registered in the system", valid: false },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(
-        {
-          valid: true,
-          mock: true,
-          member: {
-            uuid: "001",
-            fullName: "Juan Dela Cruz",
-            studentId: "2030123456",
-            email: "juan.delacruz@mapua.edu.ph",
-            course: "BS Computer Science",
-            yearLevel: "3rd Year",
-          },
-        },
-        { status: 200 }
-      );
-    }
-    /* END OF MOCK DATA (remove once have aws env variables) */
 
     // validate Server AWS Config
     const tableName = process.env.DYNAMODB_TABLE_NAME;
@@ -57,16 +28,37 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // query DynamoDB using UUID as Partition Key
-    const response = await client.send(
-      new GetCommand({
+    // prepare PK value
+    const pkValue = uuid.startsWith("MEMBER#") ? uuid : `MEMBER#${uuid}`;
+
+    // query DynamoDB by Partition Key
+    let response = await client.send(
+      new QueryCommand({
         TableName: tableName,
-        Key: { uuid },
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: {
+          ":pk": pkValue,
+        },
       })
     );
 
+    // fallback only if no match found, query using raw uuid
+    if (!response.Items || response.Items.length === 0) {
+      response = await client.send(
+        new QueryCommand({
+          TableName: tableName,
+          KeyConditionExpression: "PK = :pk",
+          ExpressionAttributeValues: {
+            ":pk": uuid,
+          },
+        })
+      );
+    }
+
+    const memberItem = response.Items?.[0];
+
     // if unregistered/invalid member uuid
-    if (!response.Item) {
+    if (!memberItem) {
       return NextResponse.json(
         { error: "Member not registered in the system", valid: false },
         { status: 404 }
@@ -77,7 +69,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         valid: true,
-        member: response.Item,
+        member: memberItem,
       },
       { status: 200 }
     );
