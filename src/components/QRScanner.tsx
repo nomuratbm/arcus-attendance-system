@@ -11,7 +11,7 @@ export function QRScanner() {
   const [scannerActive, setScannerActive] = useState(false);
   const [scannerMode, setScannerMode] = useState<"camera" | "file">("camera");
   const [loading, setLoading] = useState(false);
-  const [lastScannedUuid, setLastScannedUuid] = useState<string | null>(null);
+  const [isFrozen, setIsFrozen] = useState(false);
   const html5QrcodeRef = useRef<Html5Qrcode | null>(null);
   const isProcessingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -25,7 +25,16 @@ export function QRScanner() {
 
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
-      setLastScannedUuid(trimmedUuid);
+
+      // freeze camera frame on capture
+      try {
+        if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
+          html5QrcodeRef.current.pause(true);
+          setIsFrozen(true);
+        }
+      } catch {
+        // ignore
+      }
 
       setLoading(true);
       setScanStatus("loading");
@@ -55,9 +64,18 @@ export function QRScanner() {
         setAlert("error", "Network error connecting to database");
       } finally {
         setLoading(false);
+        // keep frame frozen briefly to view result, then resume live scanning
         setTimeout(() => {
+          try {
+            if (html5QrcodeRef.current && html5QrcodeRef.current.getState() === 3) {
+              html5QrcodeRef.current.resume();
+            }
+          } catch {
+            // ignore
+          }
+          setIsFrozen(false);
           isProcessingRef.current = false;
-        }, 1200);
+        }, 1500);
       }
     },
     [setCurrentMember, addAttendanceRecord, setScanStatus, setAlert]
@@ -75,18 +93,31 @@ export function QRScanner() {
       }
       readerEl.innerHTML = "";
 
-      const html5Qrcode = new Html5Qrcode("reader");
+      const html5Qrcode = new Html5Qrcode("reader", {
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true,
+        },
+        verbose: false,
+      });
       html5QrcodeRef.current = html5Qrcode;
 
       await html5Qrcode.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 240, height: 240 } },
+        {
+          fps: 25,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const qrboxSize = Math.floor(minEdge * 0.88);
+            return { width: qrboxSize, height: qrboxSize };
+          },
+        },
         (decodedText) => {
           processScannedUuid(decodedText);
         },
         () => {}
       );
       setScannerActive(true);
+      setIsFrozen(false);
     } catch (err) {
       console.error("Camera access error:", err);
       setAlert("error", "Camera access denied or unavailable.");
@@ -107,6 +138,7 @@ export function QRScanner() {
       console.error("Error stopping camera:", e);
     }
     setScannerActive(false);
+    setIsFrozen(false);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +173,14 @@ export function QRScanner() {
   };
 
   const resetScanner = () => {
-    setLastScannedUuid(null);
+    try {
+      if (html5QrcodeRef.current && html5QrcodeRef.current.getState() === 3) {
+        html5QrcodeRef.current.resume();
+      }
+    } catch {
+      // ignore
+    }
+    setIsFrozen(false);
     isProcessingRef.current = false;
   };
 
@@ -187,19 +226,29 @@ export function QRScanner() {
 
         <CardContent className="pt-4">
           {/* camera box */}
-          <div
-            id="reader"
-            className="w-full rounded-md overflow-hidden bg-neutral-950"
-            style={{
-              minHeight: scannerMode === "camera" ? "250px" : "0px",
-              display: scannerMode === "camera" ? "block" : "none",
-            }}
-          />
+          <div className="relative">
+            <div
+              id="reader"
+              className="w-full rounded-md overflow-hidden bg-neutral-950"
+              style={{
+                minHeight: scannerMode === "camera" ? "250px" : "0px",
+                display: scannerMode === "camera" ? "block" : "none",
+              }}
+            />
+            {scannerMode === "camera" && scannerActive && isFrozen && (
+              <div className="absolute top-2 right-2 z-10 bg-black/75 text-white text-[10px] font-mono px-2 py-0.5 rounded backdrop-blur-xs">
+                Captured ✓
+              </div>
+            )}
+          </div>
 
           {/* camera off placeholder */}
           {scannerMode === "camera" && !scannerActive && (
             <div className="py-14 text-center bg-muted/40 border border-dashed rounded-md text-muted-foreground text-xs">
               <p>Camera is currently inactive</p>
+              <p className="text-[11px] text-muted-foreground/70 mt-1">
+                Click &apos;Start Camera&apos; to begin scanning
+              </p>
             </div>
           )}
 
@@ -234,11 +283,11 @@ export function QRScanner() {
               onClick={scannerActive ? stopCamera : startCamera}
               disabled={loading}
             >
-              {loading ? "Processing..." : scannerActive ? "Stop Camera" : "Start Camera"}
+              {loading ? "Verifying..." : scannerActive ? "Stop Camera" : "Start Camera"}
             </Button>
             {scannerActive && (
               <Button variant="outline" size="sm" onClick={resetScanner}>
-                Reset
+                Resume
               </Button>
             )}
           </>
