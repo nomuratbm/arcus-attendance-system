@@ -1,6 +1,6 @@
-# Scan2PDF
+# Arcus Attendance System
 
-Scan2PDF is an ultra-streamlined, event-ready automation tool designed for extreme efficiency. By integrating a live camera QR scanner with AWS DynamoDB and client-side PDF template manipulation, this system instantly scans organization member UUIDs, fetches their pre-stored database records, and generates finalized documents on the fly.
+The Arcus Attendance System is an ultra-streamlined, event-ready automation tool designed for extreme efficiency. By integrating a live camera QR scanner with AWS DynamoDB and client-side CSV template manipulation, this system instantly scans organization member UUIDs, fetches their pre-stored database records, and generates finalized documents on the fly.
 
 ---
 
@@ -8,18 +8,17 @@ Scan2PDF is an ultra-streamlined, event-ready automation tool designed for extre
 
 - **Scan:** A web-based camera scanner reads an organization member's QR code containing their unique UUID.
 - **Fetch:** The app queries the AWS DynamoDB table using the extracted UUID to retrieve the member's pre-established profile attributes.
-- **Inject:** The retrieved record is mapped directly into the pre-existing static PDF template coordinates or interactive fields using `pdf-lib`.
+- **Inject:** The retrieved record is mapped directly into a daily .csv file.
 - **Export:** The completed, personalized document is instantly rendered and triggered for immediate download or print queueing.
 
 ---
 
 ## Tech Stack
 
-- **Frontend Framework:** Next.js (with React & TypeScript)
+- **Frontend Framework:** Next.js (with React, Zustand, & TypeScript)
 - **Styling:** Tailwind CSS & COSS UI
 - **QR Scanning:** `html5-qrcode` & `react-qr-reader`
 - **Database:** AWS DynamoDB 
-- **PDF Manipulation:** `pdf-lib`
 - **File Utilities:** `file-saver` & `lucide-react` (Icons)
 
 ---
@@ -42,7 +41,7 @@ Scan2PDF/
 │   │   ├── ui/                   # COSS UI / Base UI primitives
 │   │   └── QRScanner.tsx         # Live camera scanning interface
 │   ├── utils/
-│   │   └── pdfFiller.ts          # Core pdf-lib template mapping logic
+│   │   └── csvFiller.ts          # Core pdf-lib template mapping logic
 │   └── ...
 ├── package.json
 └── tsconfig.json
