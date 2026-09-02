@@ -24,7 +24,7 @@ export function MemberProfileCard() {
               )}
               {scanStatus === "error" && (
                 <span className="text-base font-bold text-red-600 dark:text-red-500 tracking-tight">
-                  Not Found
+                  Error
                 </span>
               )}
               {scanStatus === "loading" && (
@@ -73,6 +73,13 @@ export function MemberProfileCard() {
                 <span className="text-muted-foreground block text-[11px]">Department</span>
                 <span className="text-foreground">{currentMember.department || "—"}</span>
               </div>
+            </div>
+          ) : scanStatus === "error" ? (
+            <div className="py-14 text-center text-red-500 text-xs font-semibold">
+              <p>Scan Failed</p>
+              <p className="text-[11px] font-normal text-muted-foreground/80 mt-1">
+                Check the alert banner below for details. Ensure you have selected an event and the QR code is valid.
+              </p>
             </div>
           ) : (
             <div className="py-14 text-center text-muted-foreground text-xs">
