@@ -1,13 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import {
   segmentedControlItemVariants,
   segmentedControlRootClassName,
 } from "@/lib/segmented-control";
 
 const navItems = [
-  { href: "/", label: "Register" },
   { href: "/scanner", label: "Scanner" },
   { href: "/addevent", label: "Add Event" },
 ] as const;
@@ -29,21 +29,40 @@ function preloadScanner() {
 
 export function AppNav() {
   const pathname = usePathname();
+  const isRegisterPage = pathname === "/";
+
+  if (isRegisterPage) {
+    return (
+      <Button
+        onFocus={preloadScanner}
+        onMouseEnter={preloadScanner}
+        render={<a href="/scanner" />}
+        size="sm"
+      >
+        Admin
+      </Button>
+    );
+  }
 
   return (
-    <nav aria-label="Pages" className={segmentedControlRootClassName}>
-      {navItems.map((item) => (
-        <a
-          aria-current={pathname === item.href ? "page" : undefined}
-          className={navItemClassName}
-          href={item.href}
-          key={item.href}
-          onFocus={item.href === "/scanner" ? preloadScanner : undefined}
-          onMouseEnter={item.href === "/scanner" ? preloadScanner : undefined}
-        >
-          {item.label}
-        </a>
-      ))}
-    </nav>
+    <div className="flex items-center gap-3">
+      <nav aria-label="Pages" className={segmentedControlRootClassName}>
+        {navItems.map((item) => (
+          <a
+            aria-current={pathname === item.href ? "page" : undefined}
+            className={navItemClassName}
+            href={item.href}
+            key={item.href}
+            onFocus={item.href === "/scanner" ? preloadScanner : undefined}
+            onMouseEnter={item.href === "/scanner" ? preloadScanner : undefined}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+      <Button render={<a href="/" />} size="sm">
+        Register
+      </Button>
+    </div>
   );
 }

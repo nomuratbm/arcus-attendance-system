@@ -22,15 +22,15 @@ export function AddEventForm() {
   const addEvent = useEventsStore((state) => state.addEvent);
 
   function handleFormSubmit(formValues: Record<string, unknown>) {
-    const Name = String(formValues.Name ?? "").trim();
-    const Description = String(formValues.Description ?? "").trim();
+    const name = String(formValues.name ?? "").trim();
+    const description = String(formValues.description ?? "").trim();
 
-    const event = addEvent({ Name, Description });
+    const event = addEvent({ name, description });
 
     toastManager.add({
       type: "success",
       title: "Event added",
-      description: `${event.Name} · ${event.PK}`,
+      description: `${event.name} · ${event.PK}`,
     });
     setFormKey((current) => current + 1);
   }
@@ -50,11 +50,11 @@ export function AddEventForm() {
           onFormSubmit={handleFormSubmit}
         >
           <CardPanel className="flex flex-col gap-4">
-            <Field className="w-full" name="Name">
+            <Field className="w-full" name="name">
               <FieldLabel>Name</FieldLabel>
               <Input
                 autoComplete="off"
-                name="Name"
+                name="name"
                 placeholder="Example: AWS Arcus Kickoff"
                 required
                 type="text"
@@ -62,10 +62,10 @@ export function AddEventForm() {
               <FieldError>Please enter an event name.</FieldError>
             </Field>
 
-            <Field className="w-full" name="Description">
+            <Field className="w-full" name="description">
               <FieldLabel>Description</FieldLabel>
               <Textarea
-                name="Description"
+                name="description"
                 placeholder="Example: Opening ceremony and member check-in"
                 required
               />

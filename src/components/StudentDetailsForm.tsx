@@ -114,11 +114,12 @@ export function StudentDetailsForm() {
       programYear,
       department,
     });
+    const memberItem = useStudentFormStore.getState().buildMemberItem();
 
     toastManager.add({
       type: "success",
       title: "Student details saved",
-      description: `${studentName} · ${studentNumber} · ${programYear} · ${department}`,
+      description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
     });
   }
 

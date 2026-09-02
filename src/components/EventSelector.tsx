@@ -36,7 +36,7 @@ export function EventSelector() {
   }, []);
 
   const eventItems: EventSelectItem[] = events.map((event) => ({
-    label: event.Name,
+    label: event.name,
     value: event.PK,
   }));
   const selectedItem =

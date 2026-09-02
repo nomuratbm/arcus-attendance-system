@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { memberItemKey } from "@/store/dynamodb-keys";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // prepare PK value
-    const pkValue = uuid.startsWith("MEMBER#") ? uuid : `MEMBER#${uuid}`;
+    const pkValue = memberItemKey(uuid);
 
     // query DynamoDB by Partition Key
     let response = await client.send(

@@ -70,7 +70,7 @@ export async function generateAttendancePDF(
   page.drawText("#", { x: 50, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
   page.drawText("Student Name", { x: 80, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
   page.drawText("Student ID", { x: 250, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
-  page.drawText("Email", { x: 370, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
+  page.drawText("Program", { x: 370, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
   page.drawText("Time", { x: 510, y: tableTop - 18, size: 10, font: helveticaBold, color: darkGray });
 
   // render records
@@ -88,15 +88,15 @@ export async function generateAttendancePDF(
     records.forEach((rec, idx) => {
       if (currentY < 60) return;
 
-      const name = rec.member.full_name || rec.member.fullName || "N/A";
-      const id = rec.member.student_id || rec.member.studentId || rec.member.PK || rec.member.uuid || "N/A";
-      const email = rec.member.student_email || rec.member.email || "N/A";
+      const name = rec.member.full_name || "N/A";
+      const id = rec.member.student_id || "N/A";
+      const course = rec.member.course || "N/A";
       const time = rec.scannedAt || "N/A";
 
       page.drawText(`${idx + 1}`, { x: 50, y: currentY, size: 10, font: helvetica, color: darkGray });
       page.drawText(name.substring(0, 25), { x: 80, y: currentY, size: 10, font: helvetica, color: darkGray });
       page.drawText(id.substring(0, 18), { x: 250, y: currentY, size: 10, font: helvetica, color: darkGray });
-      page.drawText(email.substring(0, 22), { x: 370, y: currentY, size: 9, font: helvetica, color: darkGray });
+      page.drawText(course.substring(0, 22), { x: 370, y: currentY, size: 9, font: helvetica, color: darkGray });
       page.drawText(time, { x: 510, y: currentY, size: 9, font: helvetica, color: darkGray });
 
       // row border line

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAttendanceStore, AttendanceRecord } from "@/store/useAttendanceStore";
+import { useEventsStore } from "@/store/useEventsStore";
 import { generateAttendancePDF } from "@/utils/pdfFiller";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,11 @@ import { Trash2 } from "lucide-react";
 
 export function PDFExportSection() {
   const { attendanceHistory, clearHistory, removeAttendanceRecord } = useAttendanceStore();
+  const events = useEventsStore((state) => state.events);
+  const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
+  const selectedEventName =
+    events.find((event) => event.PK === selectedEventPK)?.name ??
+    "AWS Arcus Member Event Check-in";
   const [searchQuery, setSearchQuery] = useState("");
   const [isClearAllOpen, setIsClearAllOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<AttendanceRecord | null>(null);
@@ -36,42 +42,35 @@ export function PDFExportSection() {
   const uniqueUuids = Array.from(
     new Set(
       attendanceHistory.map(
-        (item) =>
-          item.member.uuid ||
-          item.member.PK ||
-          item.member.student_id ||
-          item.member.studentId ||
-          item.id
-      )
-    )
+        (item) => item.SK || item.member.SK || item.member.PK || item.member.student_id || item.id,
+      ),
+    ),
   );
   const uniqueAttendeesCount = uniqueUuids.length;
   const totalScansCount = attendanceHistory.length;
 
   const latestRecord = attendanceHistory[0];
-  const latestName = latestRecord
-    ? latestRecord.member.full_name || latestRecord.member.fullName || "Member"
-    : null;
+  const latestName = latestRecord ? latestRecord.member.full_name || "Member" : null;
 
   // filter records by search query
   const query = searchQuery.trim().toLowerCase();
   const filteredRecords = attendanceHistory.filter((item) => {
     if (!query) return true;
-    const name = (item.member.full_name || item.member.fullName || "").toLowerCase();
-    const id = (
-      item.member.student_id ||
-      item.member.studentId ||
-      item.member.PK ||
-      item.member.uuid ||
-      ""
-    ).toLowerCase();
-    const email = (item.member.student_email || item.member.email || "").toLowerCase();
+    const name = item.member.full_name.toLowerCase();
+    const id = item.member.student_id.toLowerCase();
+    const course = item.member.course.toLowerCase();
+    const department = item.member.department.toLowerCase();
 
-    return name.includes(query) || id.includes(query) || email.includes(query);
+    return (
+      name.includes(query) ||
+      id.includes(query) ||
+      course.includes(query) ||
+      department.includes(query)
+    );
   });
 
   const handleExportPDF = async () => {
-    await generateAttendancePDF(attendanceHistory);
+    await generateAttendancePDF(attendanceHistory, selectedEventName);
   };
 
   const handleConfirmClearAll = () => {
@@ -122,17 +121,11 @@ export function PDFExportSection() {
             <AlertDialogDescription>
               Are you sure you want to remove{" "}
               <strong className="text-foreground">
-                {recordToDelete?.member.full_name ||
-                  recordToDelete?.member.fullName ||
-                  "this attendee"}
+                {recordToDelete?.member.full_name || "this attendee"}
               </strong>{" "}
               (
               <span className="font-mono">
-                {recordToDelete?.member.student_id ||
-                  recordToDelete?.member.studentId ||
-                  recordToDelete?.member.PK ||
-                  recordToDelete?.member.uuid ||
-                  "ID"}
+                {recordToDelete?.member.student_id || "ID"}
               </span>
               ) from the attendance log?
             </AlertDialogDescription>
@@ -177,7 +170,7 @@ export function PDFExportSection() {
         </div>
       </CardHeader>
 
-      <CardContent className="pt-5 space-y-5">
+      <CardContent className="flex flex-col gap-5 pt-5">
         {/* metric dashboard cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="p-3.5 bg-muted/40 border rounded-lg">
@@ -220,7 +213,7 @@ export function PDFExportSection() {
               size="sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by student name, ID, or email..."
+              placeholder="Search by student name, ID, program, or department..."
             />
             {searchQuery && (
               <button
@@ -252,7 +245,7 @@ export function PDFExportSection() {
                 <TableHead className="w-10 text-center">#</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Student ID</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead>Program</TableHead>
                 <TableHead className="text-right">Time</TableHead>
                 <TableHead className="w-10 text-center">Action</TableHead>
               </TableRow>
@@ -268,14 +261,9 @@ export function PDFExportSection() {
                 </TableRow>
               ) : (
                 filteredRecords.map((item, index) => {
-                  const name = item.member.full_name || item.member.fullName || "—";
-                  const id =
-                    item.member.student_id ||
-                    item.member.studentId ||
-                    item.member.PK ||
-                    item.member.uuid ||
-                    "—";
-                  const email = item.member.student_email || item.member.email || "—";
+                  const name = item.member.full_name || "—";
+                  const id = item.member.student_id || "—";
+                  const course = item.member.course || "—";
 
                   return (
                     <TableRow key={item.id} className="group">
@@ -284,7 +272,7 @@ export function PDFExportSection() {
                       </TableCell>
                       <TableCell className="font-medium text-foreground">{name}</TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{id}</TableCell>
-                      <TableCell className="text-muted-foreground">{email}</TableCell>
+                      <TableCell className="text-muted-foreground">{course}</TableCell>
                       <TableCell className="text-right text-muted-foreground font-mono text-xs">
                         {item.scannedAt}
                       </TableCell>

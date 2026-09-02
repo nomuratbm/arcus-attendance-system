@@ -43,11 +43,11 @@ export function MemberProfileCard() {
 
         <CardContent className="pt-5">
           {currentMember ? (
-            <div className="space-y-3.5 text-xs">
+            <div className="flex flex-col gap-3.5 text-xs">
               <div>
                 <span className="text-muted-foreground block text-[11px]">Full Name</span>
                 <span className="font-semibold text-foreground text-sm">
-                  {currentMember.full_name || currentMember.fullName || "—"}
+                  {currentMember.full_name || "—"}
                 </span>
               </div>
 
@@ -56,32 +56,23 @@ export function MemberProfileCard() {
               <div>
                 <span className="text-muted-foreground block text-[11px]">Student ID</span>
                 <span className="font-mono text-foreground font-medium">
-                  {currentMember.student_id ||
-                    currentMember.studentId ||
-                    currentMember.PK ||
-                    currentMember.uuid ||
-                    "—"}
+                  {currentMember.student_id || "—"}
                 </span>
               </div>
 
               <Separator />
 
               <div>
-                <span className="text-muted-foreground block text-[11px]">Email</span>
-                <span className="text-foreground">
-                  {currentMember.student_email || currentMember.email || "—"}
-                </span>
+                <span className="text-muted-foreground block text-[11px]">Program</span>
+                <span className="text-foreground">{currentMember.course || "—"}</span>
               </div>
 
-              {currentMember.course && (
-                <>
-                  <Separator />
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Program</span>
-                    <span className="text-foreground">{currentMember.course}</span>
-                  </div>
-                </>
-              )}
+              <Separator />
+
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Department</span>
+                <span className="text-foreground">{currentMember.department || "—"}</span>
+              </div>
             </div>
           ) : (
             <div className="py-14 text-center text-muted-foreground text-xs">

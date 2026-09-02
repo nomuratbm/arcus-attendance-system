@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import QrScanner from "qr-scanner";
-import { useAttendanceStore } from "@/store/useAttendanceStore";
+import {
+  memberFromDynamoItem,
+  useAttendanceStore,
+} from "@/store/useAttendanceStore";
+import { useEventsStore } from "@/store/useEventsStore";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +26,12 @@ export function QRScanner() {
     async (scannedText: string) => {
       const trimmedUuid = scannedText.trim();
       if (!trimmedUuid) return;
+
+      if (!useEventsStore.getState().selectedEventPK) {
+        setScanStatus("error");
+        setAlert("error", "Select an event before scanning");
+        return;
+      }
 
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
@@ -44,14 +54,28 @@ export function QRScanner() {
         const response = await fetch(`/api/member?uuid=${encodeURIComponent(trimmedUuid)}`);
         const data = await response.json();
 
-        if (response.ok && data.valid && data.member) {
-          setCurrentMember(data.member);
-          addAttendanceRecord(data.member);
-          setScanStatus("success");
-          setAlert(
-            "success",
-            `Checked in: ${data.member.full_name || data.member.fullName || "Member Found"}`
+        if (
+          response.ok &&
+          data.valid &&
+          data.member &&
+          typeof data.member === "object"
+        ) {
+          const member = memberFromDynamoItem(
+            data.member as Record<string, unknown>,
+            trimmedUuid,
           );
+          setCurrentMember(member);
+          const record = addAttendanceRecord(member);
+          if (!record) {
+            setScanStatus("error");
+            setAlert("error", "Select an event before scanning");
+          } else {
+            setScanStatus("success");
+            setAlert(
+              "success",
+              `Checked in: ${member.full_name || "Member Found"}`,
+            );
+          }
         } else {
           setCurrentMember(null);
           setScanStatus("error");
