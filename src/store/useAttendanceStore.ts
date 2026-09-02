@@ -1,5 +1,26 @@
 import { create } from "zustand";
 
+/**
+ * DynamoDB Member item (read on QR scan)
+ *
+ * PK: MEMBER#(uuid)
+ * SK: MEMBER#(uuid)
+ * uuid: string
+ * student_id: string
+ * full_name: string
+ * student_email?: string
+ * role?: string
+ * course?: string
+ * year?: string | number
+ *
+ * DynamoDB Attendance item (intended write from scan history)
+ *
+ * PK: EVENT#(timestamp)
+ * SK: MEMBER#(uuid)
+ * scannedAt: string
+ * timestamp: number
+ */
+
 export interface Member {
   PK?: string;
   uuid?: string;

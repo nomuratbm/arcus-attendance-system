@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { EventSelector } from "@/components/EventSelector";
 import { MemberProfileCard } from "@/components/MemberProfileCard";
 
 const scannerPanelFallback = (
@@ -21,6 +22,7 @@ const PDFExportSection = dynamic(
 export function ScannerWorkspace() {
   return (
     <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+      <EventSelector />
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
         <QRScanner />
         <MemberProfileCard />

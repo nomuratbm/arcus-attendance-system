@@ -1,8 +1,8 @@
 "use client";
 
+import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon } from "lucide-react";
 
 export function ThemeToggle() {
   const [isDark, setIsDark] = useState(false);
@@ -10,7 +10,6 @@ export function ThemeToggle() {
 
   useEffect(() => {
     setMounted(true);
-    // check saved theme or system preference
     const savedTheme = localStorage.getItem("theme");
     const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const initialDark = savedTheme === "dark" || (!savedTheme && systemDark);
@@ -37,31 +36,29 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button variant="outline" size="xs" className="w-8 h-8 p-0 opacity-0">
-        <Sun className="w-3.5 h-3.5" />
+      <Button
+        aria-hidden="true"
+        className="opacity-0"
+        size="icon-sm"
+        tabIndex={-1}
+        type="button"
+        variant="ghost"
+      >
+        <Sun aria-hidden="true" />
       </Button>
     );
   }
 
   return (
     <Button
-      variant="outline"
-      size="xs"
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       onClick={toggleTheme}
-      className="flex items-center gap-1.5 cursor-pointer"
+      size="icon-sm"
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      type="button"
+      variant="ghost"
     >
-      {isDark ? (
-        <>
-          <Sun className="w-3.5 h-3.5 text-amber-500" />
-          <span>Light</span>
-        </>
-      ) : (
-        <>
-          <Moon className="w-3.5 h-3.5 text-slate-700" />
-          <span>Dark</span>
-        </>
-      )}
+      {isDark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
     </Button>
   );
 }

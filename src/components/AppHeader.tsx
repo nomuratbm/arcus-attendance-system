@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { AppNav } from "@/components/AppNav";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const headerTitle = (
@@ -25,7 +27,9 @@ export function AppHeader({ subtitle, children }: AppHeaderProps) {
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
+          <AppNav />
           {children}
+          <Separator className="h-6" orientation="vertical" />
           <ThemeToggle />
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import { departmentCampuses, departmentItems } from "@/lib/departments";
+import { useStudentFormStore } from "@/store/useStudentFormStore";
 
 const departmentSelectGroups = departmentCampuses.map((group, index) => (
   <Fragment key={group.campus}>
@@ -44,9 +45,36 @@ const departmentSelectGroups = departmentCampuses.map((group, index) => (
   </Fragment>
 ));
 
-function DepartmentSelect() {
+function departmentFromSelectValue(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "value" in value &&
+    typeof value.value === "string"
+  ) {
+    return value.value;
+  }
+
+  return "";
+}
+
+function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
   return (
-    <Select items={departmentItems} name="department" required>
+    <Select
+      defaultValue={defaultValue || null}
+      items={departmentItems}
+      name="department"
+      onValueChange={(value) => {
+        useStudentFormStore.getState().setFormData({
+          department: departmentFromSelectValue(value),
+        });
+      }}
+      required
+    >
       <SelectTrigger>
         <SelectValue placeholder="Select department" />
       </SelectTrigger>
@@ -59,18 +87,43 @@ function DepartmentSelect() {
 
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    setSessionReady(true);
+  }, []);
+
+  const draft = sessionReady
+    ? useStudentFormStore.getState()
+    : {
+        studentName: "",
+        studentNumber: "",
+        programYear: "",
+        department: "",
+      };
 
   function handleFormSubmit(formValues: Record<string, unknown>) {
-    const studentName = String(formValues.studentName ?? "");
-    const studentNumber = String(formValues.studentNumber ?? "");
-    const programYear = String(formValues.programYear ?? "");
-    const department = String(formValues.department ?? "");
+    const studentName = String(formValues.studentName ?? "").trim();
+    const studentNumber = String(formValues.studentNumber ?? "").trim();
+    const programYear = String(formValues.programYear ?? "").trim();
+    const department = String(formValues.department ?? "").trim();
+
+    useStudentFormStore.getState().setFormData({
+      studentName,
+      studentNumber,
+      programYear,
+      department,
+    });
 
     toastManager.add({
       type: "success",
-      title: "Student details captured",
+      title: "Student details saved",
       description: `${studentName} · ${studentNumber} · ${programYear} · ${department}`,
     });
+  }
+
+  function handleClear() {
+    useStudentFormStore.getState().clearFormData();
     setFormKey((current) => current + 1);
   }
 
@@ -84,7 +137,7 @@ export function StudentDetailsForm() {
           </CardDescription>
         </CardHeader>
         <Form
-          key={formKey}
+          key={`${sessionReady ? "session" : "pending"}-${formKey}`}
           className="contents"
           onFormSubmit={handleFormSubmit}
         >
@@ -93,7 +146,13 @@ export function StudentDetailsForm() {
               <FieldLabel>Student Name</FieldLabel>
               <Input
                 autoComplete="name"
+                defaultValue={draft.studentName}
                 name="studentName"
+                onChange={(event) => {
+                  useStudentFormStore.getState().setFormData({
+                    studentName: event.target.value,
+                  });
+                }}
                 placeholder="Example: John Benedict Vida"
                 required
                 type="text"
@@ -105,8 +164,14 @@ export function StudentDetailsForm() {
               <FieldLabel>Student Number</FieldLabel>
               <Input
                 autoComplete="off"
+                defaultValue={draft.studentNumber}
                 inputMode="numeric"
                 name="studentNumber"
+                onChange={(event) => {
+                  useStudentFormStore.getState().setFormData({
+                    studentNumber: event.target.value,
+                  });
+                }}
                 placeholder="Example: 2024105858"
                 required
                 type="text"
@@ -118,7 +183,13 @@ export function StudentDetailsForm() {
               <FieldLabel>Program - Year</FieldLabel>
               <Input
                 autoComplete="off"
+                defaultValue={draft.programYear}
                 name="programYear"
+                onChange={(event) => {
+                  useStudentFormStore.getState().setFormData({
+                    programYear: event.target.value,
+                  });
+                }}
                 placeholder="Example: CS-3"
                 required
                 type="text"
@@ -128,12 +199,12 @@ export function StudentDetailsForm() {
 
             <Field className="w-full" name="department">
               <FieldLabel>Department</FieldLabel>
-              <DepartmentSelect />
+              <DepartmentSelect defaultValue={draft.department} />
               <FieldError>Please select a department.</FieldError>
             </Field>
           </CardPanel>
           <CardFooter className="justify-end gap-2">
-            <Button type="reset" variant="ghost">
+            <Button onClick={handleClear} type="reset" variant="ghost">
               Clear
             </Button>
             <Button type="submit">Save student</Button>
