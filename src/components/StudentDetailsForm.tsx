@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -88,21 +88,23 @@ function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
   const [sessionReady, setSessionReady] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSessionReady(true);
   }, []);
 
-  const draft = sessionReady
-    ? useStudentFormStore.getState()
-    : {
-        studentName: "",
-        studentNumber: "",
-        programYear: "",
-        department: "",
-      };
+  const draft = useMemo(
+    () =>
+      sessionReady
+        ? useStudentFormStore.getState()
+        : { studentName: "", studentNumber: "", programYear: "", department: "" },
+    [sessionReady, formKey],
+  );
 
-  function handleFormSubmit(formValues: Record<string, unknown>) {
+  async function handleFormSubmit(formValues: Record<string, unknown>) {
     const studentName = String(formValues.studentName ?? "").trim();
     const studentNumber = String(formValues.studentNumber ?? "").trim();
     const programYear = String(formValues.programYear ?? "").trim();
@@ -115,16 +117,55 @@ export function StudentDetailsForm() {
       department,
     });
     const memberItem = useStudentFormStore.getState().buildMemberItem();
+    const rawUuid = memberItem.PK.replace(/^MEMBER#/, "");
 
-    toastManager.add({
-      type: "success",
-      title: "Student details saved",
-      description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
-    });
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uuid: rawUuid,
+          full_name: memberItem.full_name,
+          student_id: memberItem.student_id,
+          course: memberItem.course,
+          department: memberItem.department,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.qrDataUrl) {
+        setQrDataUrl(data.qrDataUrl);
+        toastManager.add({
+          type: "success",
+          title: "Student registered",
+          description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
+        });
+        setTimeout(() => {
+          qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 100);
+      } else {
+        toastManager.add({
+          type: "error",
+          title: "Registration failed",
+          description: data.error ?? "An unexpected error occurred.",
+        });
+      }
+    } catch {
+      toastManager.add({
+        type: "error",
+        title: "Network error",
+        description: "Could not reach the server. Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleClear() {
     useStudentFormStore.getState().clearFormData();
+    setQrDataUrl(null);
     setFormKey((current) => current + 1);
   }
 
@@ -208,9 +249,22 @@ export function StudentDetailsForm() {
             <Button onClick={handleClear} type="reset" variant="ghost">
               Clear
             </Button>
-            <Button type="submit">Save student</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Registering..." : "Save student"}
+            </Button>
           </CardFooter>
         </Form>
+        {qrDataUrl && (
+          <div
+            ref={qrRef}
+            className="flex flex-col items-center justify-center gap-2 px-6 pb-6 pt-2"
+          >
+            <img src={qrDataUrl} alt="Student QR Code" className="w-64 h-64 object-contain rounded-md shadow-sm border" />
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Right-click (or long press) and save this QR code image. You will need it to scan in at events.
+            </p>
+          </div>
+        )}
       </Card>
     </ToastProvider>
   );
