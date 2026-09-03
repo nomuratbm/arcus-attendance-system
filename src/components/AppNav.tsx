@@ -37,7 +37,7 @@ export function AppNav() {
       <Button
         onFocus={preloadScanner}
         onMouseEnter={preloadScanner}
-        render={<Link href="/scanner" />}
+        render={<a href="/api/auth/login?next=/scanner" />}
         size="sm"
       >
         Admin

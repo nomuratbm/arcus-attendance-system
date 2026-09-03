@@ -15,7 +15,9 @@ async function signOut(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.redirect(getLogoutUrl());
+  // 303 converts the Sign out POST into a GET against Cognito /logout,
+  // which then redirects to the registered sign-out URL (APP_BASE_URL/).
+  const response = NextResponse.redirect(getLogoutUrl(), 303);
   clearAuthCookies(response.cookies);
   return response;
 }
