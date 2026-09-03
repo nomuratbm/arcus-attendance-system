@@ -15,9 +15,9 @@ import {
 
 const INSTRUCTIONS = [
   "Enter your details in the fields on this page.",
-  "A QR code is generated for you. Keep it — it is unique to you.",
+  "A QR code is generated from your student number. Keep it — each student number can only be registered once.",
   "Show this QR code at AWS SBG Arcus events to mark your attendance.",
-  "If you lose the QR code, return to this page and enter your details again to generate a new one.",
+  "If you lose the QR code, open Retrieve and enter your student number to generate it again. Registering twice with the same number will be rejected.",
 ] as const;
 
 const instructionList = (

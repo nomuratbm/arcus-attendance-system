@@ -6,15 +6,14 @@ import type { Member } from "@/store/member-item";
 /**
  * DynamoDB Member item (registration write)
  *
- * PK: MEMBER#(uuid)
- * SK: MEMBER#(uuid)
+ * PK: MEMBER#(student_id)
+ * SK: MEMBER#(student_id)
  * full_name: string        // studentName
  * student_id: string       // studentNumber
  * course: string           // programYear
  * department: string
  */
 export interface StudentFormData {
-  uuid: string;
   studentName: string;
   studentNumber: string;
   programYear: string;
@@ -28,7 +27,6 @@ interface StudentFormState extends StudentFormData {
 }
 
 const emptyFormData: StudentFormData = {
-  uuid: "",
   studentName: "",
   studentNumber: "",
   programYear: "",
@@ -46,17 +44,13 @@ export const useStudentFormStore = create<StudentFormState>()(
 
       buildMemberItem: () => {
         const state = get();
-        const uuid = state.uuid || crypto.randomUUID();
-        if (!state.uuid) {
-          set({ uuid });
-        }
-
-        const key = memberItemKey(uuid);
+        const studentId = state.studentNumber.trim();
+        const key = memberItemKey(studentId);
         return {
           PK: key,
           SK: key,
           full_name: state.studentName.trim(),
-          student_id: state.studentNumber.trim(),
+          student_id: studentId,
           course: state.programYear.trim(),
           department: state.department.trim(),
         };
@@ -66,7 +60,6 @@ export const useStudentFormStore = create<StudentFormState>()(
       name: "arcus-student-form",
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        uuid: state.uuid,
         studentName: state.studentName,
         studentNumber: state.studentNumber,
         programYear: state.programYear,

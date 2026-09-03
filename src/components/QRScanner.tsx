@@ -24,11 +24,11 @@ export function QRScanner() {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const canScan = Boolean(selectedEventPK);
 
-  const processScannedUuid = useCallback(
+  const processScannedStudentId = useCallback(
     async (scannedText: string) => {
       console.log("Scanned text from QR:", scannedText);
-      const trimmedUuid = scannedText.trim();
-      if (!trimmedUuid) return;
+      const trimmedStudentId = scannedText.trim();
+      if (!trimmedStudentId) return;
 
       if (!useEventsStore.getState().selectedEventPK) {
         setScanStatus("error");
@@ -54,7 +54,9 @@ export function QRScanner() {
       setAlert(null, null);
 
       try {
-        const response = await fetch(`/api/member?uuid=${encodeURIComponent(trimmedUuid)}`);
+        const response = await fetch(
+          `/api/member?student_id=${encodeURIComponent(trimmedStudentId)}`,
+        );
         const data = await response.json();
 
         if (
@@ -65,7 +67,7 @@ export function QRScanner() {
         ) {
           const member = memberFromDynamoItem(
             data.member as Record<string, unknown>,
-            trimmedUuid,
+            trimmedStudentId,
           );
           setCurrentMember(member);
 
@@ -94,13 +96,13 @@ export function QRScanner() {
               `Checked in: ${member.full_name || "Member Found"}`,
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
-            const rawMemberUuid = (record.SK || member.PK).replace(/^MEMBER#/, "");
+            const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
             void fetch("/api/checkin", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 eventId: rawEventId,
-                uuid: rawMemberUuid,
+                student_id: rawStudentId,
                 scannedAt: record.scannedAt,
                 timestamp: record.timestamp,
               }),
@@ -184,7 +186,7 @@ export function QRScanner() {
           },
         },
         (decodedText) => {
-          processScannedUuid(decodedText);
+          processScannedStudentId(decodedText);
         },
         () => {}
       );
@@ -237,7 +239,7 @@ export function QRScanner() {
       });
 
       if (result && result.data) {
-        await processScannedUuid(result.data);
+        await processScannedStudentId(result.data);
       } else {
         throw new Error("No QR detected");
       }

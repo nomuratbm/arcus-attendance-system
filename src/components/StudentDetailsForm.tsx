@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
+import { useQrCode } from "@/hooks/use-qr-code";
 import { departmentCampuses, departmentItems } from "@/lib/departments";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
 
@@ -89,8 +91,8 @@ export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
   const [sessionReady, setSessionReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
+  const { dataUrl, generate, clear } = useQrCode();
 
   useEffect(() => {
     setSessionReady(true);
@@ -117,7 +119,6 @@ export function StudentDetailsForm() {
       department,
     });
     const memberItem = useStudentFormStore.getState().buildMemberItem();
-    const rawUuid = memberItem.PK.replace(/^MEMBER#/, "");
 
     setSubmitting(true);
     try {
@@ -125,7 +126,6 @@ export function StudentDetailsForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uuid: rawUuid,
           full_name: memberItem.full_name,
           student_id: memberItem.student_id,
           course: memberItem.course,
@@ -135,8 +135,8 @@ export function StudentDetailsForm() {
 
       const data = await response.json();
 
-      if (response.ok && data.qrDataUrl) {
-        setQrDataUrl(data.qrDataUrl);
+      if (response.ok) {
+        await generate(memberItem.student_id);
         toastManager.add({
           type: "success",
           title: "Student registered",
@@ -145,6 +145,13 @@ export function StudentDetailsForm() {
         setTimeout(() => {
           qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }, 100);
+      } else if (response.status === 409) {
+        toastManager.add({
+          type: "error",
+          title: "Already registered",
+          description:
+            "This student number is already registered. Use Retrieve to get your QR code.",
+        });
       } else {
         toastManager.add({
           type: "error",
@@ -165,7 +172,7 @@ export function StudentDetailsForm() {
 
   function handleClear() {
     useStudentFormStore.getState().clearFormData();
-    setQrDataUrl(null);
+    clear();
     setFormKey((current) => current + 1);
   }
 
@@ -254,17 +261,7 @@ export function StudentDetailsForm() {
             </Button>
           </CardFooter>
         </Form>
-        {qrDataUrl && (
-          <div
-            ref={qrRef}
-            className="flex flex-col items-center justify-center gap-2 px-6 pb-6 pt-2"
-          >
-            <img src={qrDataUrl} alt="Student QR Code" className="w-64 h-64 object-contain rounded-md shadow-sm border" />
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              Right-click (or long press) and save this QR code image. You will need it to scan in at events.
-            </p>
-          </div>
-        )}
+        {dataUrl ? <QrCodePreview dataUrl={dataUrl} ref={qrRef} /> : null}
       </Card>
     </ToastProvider>
   );

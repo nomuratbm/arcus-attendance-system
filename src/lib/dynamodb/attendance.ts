@@ -1,7 +1,11 @@
 import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
 import { getMembers } from "@/lib/dynamodb/members";
-import { eventItemKey, memberItemKey } from "@/store/dynamodb-keys";
+import {
+  eventItemKey,
+  memberItemKey,
+  studentIdFromMemberKey,
+} from "@/store/dynamodb-keys";
 
 export type CheckInResult =
   | { status: "created" }
@@ -20,11 +24,11 @@ export type EventCheckIn = {
 
 export async function checkIn(
   eventId: string,
-  uuid: string,
+  studentId: string,
   attendance?: { scannedAt: string; timestamp: number },
 ): Promise<CheckInResult> {
   const eventPK = eventItemKey(eventId);
-  const memberSK = memberItemKey(uuid);
+  const memberSK = memberItemKey(studentId);
   const now = new Date();
   const scannedAt =
     attendance?.scannedAt ??
@@ -85,7 +89,7 @@ export async function listEventCheckIns(
       PK: typeof checkIn.PK === "string" && checkIn.PK ? checkIn.PK : eventPK,
       SK: sk,
       full_name: member?.full_name ?? "",
-      student_id: member?.student_id ?? "",
+      student_id: member?.student_id || studentIdFromMemberKey(sk),
       course: member?.course ?? "",
       department: member?.department ?? "",
       scannedAt: String(checkIn.scannedAt ?? ""),

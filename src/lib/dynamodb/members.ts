@@ -1,32 +1,51 @@
 import { BatchGetCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
-import { memberItemKey } from "@/store/dynamodb-keys";
+import {
+  memberItemKey,
+  studentIdFromMemberKey,
+} from "@/store/dynamodb-keys";
 import { type Member } from "@/store/member-item";
 
 export type { Member };
 
 export type MemberDetails = Omit<Member, "PK" | "SK">;
 
-export async function createMember(
-  uuid: string,
-  details: MemberDetails,
-): Promise<void> {
-  const key = memberItemKey(uuid);
+export type CreateMemberResult =
+  | { status: "created" }
+  | { status: "already-exists" };
 
-  await dynamodb.send(
-    new PutCommand({
-      TableName: tableName(),
-      Item: {
-        PK: key,
-        SK: key,
-        ...details,
-      },
-    }),
-  );
+export async function createMember(
+  details: MemberDetails,
+): Promise<CreateMemberResult> {
+  const studentId = details.student_id.trim();
+  const key = memberItemKey(studentId);
+
+  try {
+    await dynamodb.send(
+      new PutCommand({
+        TableName: tableName(),
+        Item: {
+          PK: key,
+          SK: key,
+          ...details,
+          student_id: studentId,
+        },
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+
+    return { status: "created" };
+  } catch (error: unknown) {
+    if (isConditionalCheckFailed(error)) {
+      return { status: "already-exists" };
+    }
+
+    throw error;
+  }
 }
 
-export async function getMember(uuid: string): Promise<Member | null> {
-  const trimmed = uuid.trim();
+export async function getMember(studentId: string): Promise<Member | null> {
+  const trimmed = studentId.trim();
   if (!trimmed) {
     return null;
   }
@@ -120,12 +139,26 @@ function memberFromRecord(item: Record<string, unknown>): Member | null {
     return null;
   }
 
+  const studentId =
+    typeof item.student_id === "string" && item.student_id
+      ? item.student_id
+      : studentIdFromMemberKey(pk);
+
   return {
     PK: pk,
     SK: sk,
     full_name: typeof item.full_name === "string" ? item.full_name : "",
-    student_id: typeof item.student_id === "string" ? item.student_id : "",
+    student_id: studentId,
     course: typeof item.course === "string" ? item.course : "",
     department: typeof item.department === "string" ? item.department : "",
   };
+}
+
+function isConditionalCheckFailed(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "ConditionalCheckFailedException"
+  );
 }
