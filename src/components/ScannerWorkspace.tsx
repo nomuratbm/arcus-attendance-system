@@ -191,7 +191,7 @@ export function ScannerWorkspace() {
   }, [selectedEventPK]);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+    <main className="mx-auto w-full max-w-5xl min-w-0 space-y-6 overflow-x-clip px-4 py-8 sm:px-6">
       <EventSelector />
       <QRScanner />
       <AttendanceDashboard />

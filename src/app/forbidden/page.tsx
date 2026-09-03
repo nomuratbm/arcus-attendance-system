@@ -1,4 +1,4 @@
-import { AppHeader } from "@/components/AppHeader";
+import { AppHeader, PageShell } from "@/components/AppHeader";
 import { SignOutButton } from "@/components/SignOutButton";
 import {
   Card,
@@ -10,9 +10,9 @@ import {
 
 export default function ForbiddenPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-150">
+    <PageShell>
       <AppHeader subtitle="Access denied" />
-      <main className="mx-auto max-w-xl px-6 py-8">
+      <main className="mx-auto w-full min-w-0 max-w-xl px-4 py-8 sm:px-6">
         <Card>
           <CardHeader>
             <CardTitle>Admin access required</CardTitle>
@@ -26,6 +26,6 @@ export default function ForbiddenPage() {
           </CardFooter>
         </Card>
       </main>
-    </div>
+    </PageShell>
   );
 }

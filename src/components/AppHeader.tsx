@@ -5,8 +5,10 @@ import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const headerTitle = (
-  <div className="flex items-center gap-2">
-    <h1 className="text-base font-semibold text-foreground">Arcus Attendance</h1>
+  <div className="flex min-w-0 items-center gap-2">
+    <h1 className="truncate text-base font-semibold text-foreground">
+      Arcus Attendance
+    </h1>
     <Badge className="max-sm:hidden" size="sm" variant="outline">
       By AWS-SBG: Arcus
     </Badge>
@@ -18,18 +20,30 @@ type AppHeaderProps = {
   children?: ReactNode;
 };
 
+export function PageShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-dvh w-full min-w-0 flex-1 flex-col overflow-x-clip bg-background text-foreground transition-colors duration-150">
+      {children}
+    </div>
+  );
+}
+
 export function AppHeader({ subtitle, children }: AppHeaderProps) {
   return (
     <header className="border-b bg-card">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-        <div>
+      <div className="mx-auto grid w-full max-w-5xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 px-4 py-3 sm:flex sm:h-16 sm:px-6 sm:py-0">
+        <div className="min-w-0">
           {headerTitle}
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <AppNav />
-          {children}
-          <Separator className="h-6" orientation="vertical" />
+        <div className="order-last col-span-2 min-w-0 sm:order-none sm:ml-auto sm:w-auto">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto overscroll-x-contain sm:gap-3">
+            <AppNav />
+            {children}
+          </div>
+        </div>
+        <Separator className="hidden h-6 sm:block" orientation="vertical" />
+        <div className="shrink-0">
           <ThemeToggle />
         </div>
       </div>

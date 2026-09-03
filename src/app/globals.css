@@ -227,6 +227,17 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply overflow-x-clip font-sans;
   }
+}
+
+#reader {
+  width: 100% !important;
+  border: none !important;
+}
+
+#reader video,
+#reader canvas,
+#reader img {
+  max-width: 100% !important;
 }

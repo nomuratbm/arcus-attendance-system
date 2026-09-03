@@ -1,15 +1,15 @@
-import { AppHeader } from "@/components/AppHeader";
+import { AppHeader, PageShell } from "@/components/AppHeader";
 import { InstructionsDialog } from "@/components/InstructionsDialog";
 import { StudentDetailsForm } from "@/components/StudentDetailsForm";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-150">
+    <PageShell>
       <AppHeader subtitle="Student registration" />
-      <main className="mx-auto max-w-xl px-6 py-8">
+      <main className="mx-auto w-full min-w-0 max-w-xl px-4 py-8 sm:px-6">
         <InstructionsDialog />
         <StudentDetailsForm />
       </main>
-    </div>
+    </PageShell>
   );
 }

@@ -320,7 +320,7 @@ export function QRScanner() {
           <div className="relative">
             <div
               id="reader"
-              className="w-full rounded-md overflow-hidden bg-neutral-950"
+              className="w-full max-w-full overflow-hidden rounded-md bg-neutral-950"
               style={{
                 minHeight: scannerMode === "camera" ? "250px" : "0px",
                 display: scannerMode === "camera" ? "block" : "none",
