@@ -19,7 +19,10 @@ export async function GET() {
     }
 
     const events = await getEvents();
-    return NextResponse.json({ events }, { status: 200 });
+    return NextResponse.json(
+      { events },
+      { headers: { "Cache-Control": "no-store" }, status: 200 },
+    );
   } catch (error) {
     console.error("Error in GET /api/events:", error);
     return NextResponse.json(

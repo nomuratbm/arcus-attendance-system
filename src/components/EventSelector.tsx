@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,13 +51,8 @@ export function EventSelector() {
   const removeEvent = useEventsStore((state) => state.removeEvent);
   const eventsLoading = useEventsStore((state) => state.eventsLoading);
   const eventsError = useEventsStore((state) => state.eventsError);
-  const [hasHydrated, setHasHydrated] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
 
   const eventItems: EventSelectItem[] = events.map((event) => ({
     label: event.name,
@@ -66,13 +61,14 @@ export function EventSelector() {
   const selectedItem =
     eventItems.find((item) => item.value === selectedEventPK) ?? null;
   const selectedEvent = events.find((event) => event.PK === selectedEventPK);
-  const hasEvents = hasHydrated && eventItems.length > 0;
+  const hasEvents = eventItems.length > 0;
   const canDelete = Boolean(selectedEvent);
-  const selectPlaceholder = eventsLoading
-    ? "Loading events..."
-    : hasEvents
-      ? "Select an event"
-      : "No events yet";
+  const selectPlaceholder =
+    !hasEvents && eventsLoading
+      ? "Loading events..."
+      : hasEvents
+        ? "Select an event"
+        : "No events yet";
 
   async function handleConfirmDelete() {
     if (!selectedEvent) {
@@ -137,9 +133,9 @@ export function EventSelector() {
             <ContextMenu>
               <ContextMenuTrigger className="block w-full" render={<div />}>
                 <Select
-                  disabled={!hasEvents || eventsLoading}
+                  disabled={!hasEvents}
                   isItemEqualToValue={(itemValue, value) =>
-                    itemValue.value === value.value
+                    itemValue.value === value?.value
                   }
                   items={eventItems}
                   onValueChange={(value) => {
@@ -178,10 +174,10 @@ export function EventSelector() {
             <FieldDescription>
               {eventsError
                 ? eventsError
-                : eventsLoading
-                  ? "Loading events from the registry."
-                  : hasEvents
-                    ? "Attendance scans will be recorded for this event. Right-click to delete it."
+                : hasEvents
+                  ? "Attendance scans will be recorded for this event. Right-click to delete it."
+                  : eventsLoading
+                    ? "Loading events from the registry."
                     : "Use Add Event in the header to create an event first."}
             </FieldDescription>
           </Field>
