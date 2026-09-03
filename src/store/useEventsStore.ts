@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { EVENT_GSI1PK } from "@/store/dynamodb-keys";
+import {
+  mergeEventsByPk,
+  mergePersistedEventSelection,
+  readPersistedSelectedEventPK,
+  resolveSelectedEventPK,
+} from "@/store/merge-events";
 
 /**
  * DynamoDB Event item
@@ -34,11 +40,6 @@ interface EventsState {
   setEventsError: (error: string | null) => void;
   setSelectedEventPK: (pk: string | null) => void;
 }
-
-type PersistedEventsState = {
-  events?: unknown;
-  selectedEventPK?: unknown;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -90,27 +91,6 @@ export function parseAttendanceEvent(raw: unknown): AttendanceEvent | null {
   };
 }
 
-function migratePersistedEvents(
-  persisted: unknown,
-): Pick<EventsState, "events" | "selectedEventPK"> {
-  if (!isRecord(persisted)) {
-    return { events: [], selectedEventPK: null };
-  }
-
-  const events = Array.isArray(persisted.events)
-    ? persisted.events
-        .map(parseAttendanceEvent)
-        .filter((event): event is AttendanceEvent => event !== null)
-    : [];
-  const selectedEventPK =
-    typeof persisted.selectedEventPK === "string" &&
-    events.some((event) => event.PK === persisted.selectedEventPK)
-      ? persisted.selectedEventPK
-      : null;
-
-  return { events, selectedEventPK };
-}
-
 export const useEventsStore = create<EventsState>()(
   persist(
     (set) => ({
@@ -138,16 +118,18 @@ export const useEventsStore = create<EventsState>()(
         });
       },
 
-      setEvents: (events) => {
-        set((state) => ({
-          events,
-          eventsError: null,
-          selectedEventPK:
-            state.selectedEventPK &&
-            events.some((event) => event.PK === state.selectedEventPK)
-              ? state.selectedEventPK
-              : null,
-        }));
+      setEvents: (incoming) => {
+        set((state) => {
+          const events = mergeEventsByPk(state.events, incoming);
+          return {
+            events,
+            eventsError: null,
+            selectedEventPK: resolveSelectedEventPK(
+              state.selectedEventPK,
+              events,
+            ),
+          };
+        });
       },
 
       setEventsLoading: (eventsLoading) => set({ eventsLoading }),
@@ -158,20 +140,16 @@ export const useEventsStore = create<EventsState>()(
     }),
     {
       name: "arcus-events-v2",
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         if (version < 2) {
-          return { events: [], selectedEventPK: null };
+          return { selectedEventPK: null };
         }
 
-        return migratePersistedEvents(persisted);
+        return { selectedEventPK: readPersistedSelectedEventPK(persisted) };
       },
-      merge: (persisted, current) => ({
-        ...current,
-        ...migratePersistedEvents(persisted),
-      }),
+      merge: mergePersistedEventSelection,
       partialize: (state) => ({
-        events: state.events,
         selectedEventPK: state.selectedEventPK,
       }),
     },

@@ -65,6 +65,19 @@ function attendanceFromResponse(
     .sort((left, right) => right.timestamp - left.timestamp);
 }
 
+function isAbortError(error: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted) {
+    return true;
+  }
+
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    error.name === "AbortError"
+  );
+}
+
 export function ScannerWorkspace() {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
 
@@ -76,7 +89,10 @@ export function ScannerWorkspace() {
     setEventsLoading(true);
     setEventsError(null);
 
-    void fetch("/api/events", { signal: controller.signal })
+    void fetch("/api/events", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
         const data: unknown = await response.json().catch(() => null);
         if (!response.ok) {
@@ -98,7 +114,7 @@ export function ScannerWorkspace() {
         setEvents(events);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) {
+        if (isAbortError(error, controller.signal)) {
           return;
         }
 
