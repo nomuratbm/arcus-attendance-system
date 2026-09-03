@@ -1,13 +1,13 @@
 import { create } from "zustand";
-import { memberItemKey } from "@/store/dynamodb-keys";
+import { memberItemKey, studentIdFromMemberKey } from "@/store/dynamodb-keys";
 import { type Member } from "@/store/member-item";
 import { useEventsStore } from "@/store/useEventsStore";
 
 /**
  * DynamoDB Member item
  *
- * PK: MEMBER#(uuid)
- * SK: MEMBER#(uuid)
+ * PK: MEMBER#(student_id)
+ * SK: MEMBER#(student_id)
  * full_name: string
  * student_id: string
  * course: string
@@ -16,7 +16,7 @@ import { useEventsStore } from "@/store/useEventsStore";
  * DynamoDB Attendance item (intended write from scan history)
  *
  * PK: EVENT#(uuid)
- * SK: MEMBER#(uuid)
+ * SK: MEMBER#(student_id)
  * scannedAt: string
  * timestamp: number
  */
@@ -56,18 +56,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function memberFromDynamoItem(
   item: Record<string, unknown>,
-  scannedUuid: string,
+  scannedStudentId: string,
 ): Member {
   const key =
     (typeof item.PK === "string" && item.PK) ||
     (typeof item.SK === "string" && item.SK) ||
-    memberItemKey(scannedUuid);
+    memberItemKey(scannedStudentId);
 
   return {
     PK: key,
     SK: typeof item.SK === "string" && item.SK ? item.SK : key,
     full_name: typeof item.full_name === "string" ? item.full_name : "",
-    student_id: typeof item.student_id === "string" ? item.student_id : "",
+    student_id:
+      typeof item.student_id === "string" && item.student_id
+        ? item.student_id
+        : studentIdFromMemberKey(key),
     course: typeof item.course === "string" ? item.course : "",
     department: typeof item.department === "string" ? item.department : "",
   };
@@ -102,7 +105,10 @@ export function parseAttendanceRecord(
       PK: sk,
       SK: sk,
       full_name: typeof raw.full_name === "string" ? raw.full_name : "",
-      student_id: typeof raw.student_id === "string" ? raw.student_id : "",
+      student_id:
+        typeof raw.student_id === "string" && raw.student_id
+          ? raw.student_id
+          : studentIdFromMemberKey(sk),
       course: typeof raw.course === "string" ? raw.course : "",
       department: typeof raw.department === "string" ? raw.department : "",
     },

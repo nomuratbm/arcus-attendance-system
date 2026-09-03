@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import QRCode from "qrcode";
 import { createMember } from "@/lib/dynamodb/members";
 
 export const dynamic = "force-dynamic";
@@ -7,15 +6,17 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { uuid, full_name, student_id, course, department } = body as {
-      uuid: string;
+    const { full_name, student_id, course, department } = body as {
       full_name: string;
       student_id: string;
       course: string;
       department: string;
     };
 
-    if (!uuid || !full_name || !student_id || !course || !department) {
+    const normalizedStudentId =
+      typeof student_id === "string" ? student_id.trim() : "";
+
+    if (!full_name || !normalizedStudentId || !course || !department) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -30,23 +31,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await createMember(uuid, { full_name, student_id, course, department });
-
-    const qrDataUrl = await QRCode.toDataURL(uuid, { 
-      type: "image/png",
-      margin: 2,
-      scale: 8,
-      color: {
-        dark: "#000000",
-        light: "#ffffff"
-      }
+    const result = await createMember({
+      full_name,
+      student_id: normalizedStudentId,
+      course,
+      department,
     });
+
+    if (result.status === "already-exists") {
+      return NextResponse.json(
+        { error: "This student number is already registered" },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       {
         success: true,
-        uuid,
-        qrDataUrl,
+        student_id: normalizedStudentId,
       },
       { status: 201 }
     );

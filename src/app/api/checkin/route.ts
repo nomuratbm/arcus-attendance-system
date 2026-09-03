@@ -13,15 +13,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const eventId = typeof body.eventId === "string" ? body.eventId.trim() : "";
-    const uuid = typeof body.uuid === "string" ? body.uuid.trim() : "";
+    const studentId =
+      typeof body.student_id === "string" ? body.student_id.trim() : "";
     const scannedAt =
       typeof body.scannedAt === "string" ? body.scannedAt : undefined;
     const timestamp =
       typeof body.timestamp === "number" ? body.timestamp : undefined;
 
-    if (!eventId || !uuid) {
+    if (!eventId || !studentId) {
       return NextResponse.json(
-        { error: "Missing required fields: eventId and uuid" },
+        { error: "Missing required fields: eventId and student_id" },
         { status: 400 },
       );
     }
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
 
     const result = await checkIn(
       eventId,
-      uuid,
+      studentId,
       scannedAt && timestamp !== undefined ? { scannedAt, timestamp } : undefined,
     );
 

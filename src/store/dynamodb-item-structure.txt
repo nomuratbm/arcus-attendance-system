@@ -5,25 +5,29 @@ Single table. Keys are strings.
 1. Member  (registration write from useStudentFormStore)
 --------------------------------------------------------------------------------
 
-PK: MEMBER#(uuid)
-SK: MEMBER#(uuid)
-full_name: string        // form field: studentName
-student_id: string       // form field: studentNumber
+PK: MEMBER#(student_id)
+SK: MEMBER#(student_id)
+    full_name: string        // form field: studentName
+student_id: string       // form field: studentNumber (same value as the key)
 course: string           // form field: programYear
 department: string
+
+Create uses ConditionExpression attribute_not_exists(PK) so a student
+number can only be registered once.
 
 Example item:
 
 {
-  "PK": "MEMBER#550e8400-e29b-41d4-a716-446655440000",
-  "SK": "MEMBER#550e8400-e29b-41d4-a716-446655440000",
+  "PK": "MEMBER#2024105858",
+  "SK": "MEMBER#2024105858",
   "full_name": "John Benedict Vida",
   "student_id": "2024105858",
   "course": "CS-3",
   "department": "College of Computer Studies"
 }
 
-QR scan reads only the uuid from the code, then looks up this same Member item by PK MEMBER#(uuid).
+QR code encodes the raw student_id. Scan looks up this Member item by
+PK MEMBER#(student_id).
 
 --------------------------------------------------------------------------------
 2. Event  (write from useEventsStore)
@@ -52,7 +56,7 @@ Example item:
 --------------------------------------------------------------------------------
 
 PK: EVENT#(uuid)     // selected event PK
-SK: MEMBER#(uuid)
+SK: MEMBER#(student_id)
 scannedAt: string
 timestamp: number
 
@@ -60,7 +64,7 @@ Example item:
 
 {
   "PK": "EVENT#550e8400-e29b-41d4-a716-446655440000",
-  "SK": "MEMBER#550e8400-e29b-41d4-a716-446655440000",
+  "SK": "MEMBER#2024105858",
   "scannedAt": "02:15:08 PM",
   "timestamp": 1725264908000
 }

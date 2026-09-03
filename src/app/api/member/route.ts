@@ -11,11 +11,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const uuid = request.nextUrl.searchParams.get("uuid")?.trim();
+    const studentId = request.nextUrl.searchParams.get("student_id")?.trim();
 
-    if (!uuid) {
+    if (!studentId) {
       return NextResponse.json(
-        { error: "Invalid QR code: missing UUID parameter" },
+        { error: "Invalid QR code: missing student number" },
         { status: 400 }
       );
     }
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const member = await getMember(uuid);
+    const member = await getMember(studentId);
 
     if (!member) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error querying DynamoDB for member UUID:", error);
+    console.error("Error querying DynamoDB for member:", error);
     return NextResponse.json(
       { error: "Failed to connect to DynamoDB database" },
       { status: 500 }
