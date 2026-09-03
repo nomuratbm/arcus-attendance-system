@@ -7,8 +7,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const headerTitle = (
   <div className="flex items-center gap-2">
     <h1 className="text-base font-semibold text-foreground">Arcus Attendance</h1>
-    <Badge size="sm" variant="outline">
-      AWS Student Builder Group
+    <Badge className="max-sm:hidden" size="sm" variant="outline">
+      By AWS-SBG: Arcus
     </Badge>
   </div>
 );

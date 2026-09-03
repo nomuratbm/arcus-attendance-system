@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/auth/session";
 import { checkIn } from "@/lib/dynamodb/attendance";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await request.json();
     const eventId = typeof body.eventId === "string" ? body.eventId.trim() : "";

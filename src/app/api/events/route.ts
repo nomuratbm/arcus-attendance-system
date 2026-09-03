@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/auth/session";
 import { createEvent, getEvents } from "@/lib/dynamodb/events";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     if (!process.env.DYNAMODB_TABLE_NAME) {
       return NextResponse.json(
@@ -24,6 +30,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await request.json();
     const name = typeof body.name === "string" ? body.name.trim() : "";

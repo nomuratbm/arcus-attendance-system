@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/auth/session";
 import { listEventCheckIns } from "@/lib/dynamodb/attendance";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,11 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ eventId: string }> },
 ) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const { eventId } = await params;
 

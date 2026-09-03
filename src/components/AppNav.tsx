@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@/components/SignOutButton";
 import { Button } from "@/components/ui/button";
 import {
   segmentedControlItemVariants,
@@ -35,7 +37,7 @@ export function AppNav() {
       <Button
         onFocus={preloadScanner}
         onMouseEnter={preloadScanner}
-        render={<a href="/scanner" />}
+        render={<Link href="/scanner" />}
         size="sm"
       >
         Admin
@@ -59,9 +61,10 @@ export function AppNav() {
           </a>
         ))}
       </nav>
-      <Button render={<a href="/" />} size="sm">
+      <Button render={<Link href="/" />} size="sm">
         Register
       </Button>
+      <SignOutButton />
     </div>
   );
 }

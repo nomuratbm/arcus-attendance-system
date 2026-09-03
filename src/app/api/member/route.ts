@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApi } from "@/lib/auth/session";
 import { getMember } from "@/lib/dynamodb/members";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const uuid = request.nextUrl.searchParams.get("uuid")?.trim();
 
