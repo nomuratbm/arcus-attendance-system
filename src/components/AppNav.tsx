@@ -67,7 +67,7 @@ export function AppNav() {
 
   if (isPublicPath(pathname)) {
     return (
-      <div className="flex w-max items-center gap-2 sm:gap-3">
+      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
         <SegmentedPageNav items={publicNavItems} pathname={pathname} />
         <Button
           onFocus={preloadScanner}
@@ -82,12 +82,14 @@ export function AppNav() {
   }
 
   return (
-    <div className="flex w-max items-center gap-2 sm:gap-3">
+    <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
       <SegmentedPageNav items={adminNavItems} pathname={pathname} />
-      <Button render={<Link href="/" />} size="sm">
-        Register
-      </Button>
-      <SignOutButton />
+      <div className="flex items-center gap-2 sm:gap-3">
+        <Button render={<Link href="/" />} size="sm">
+          Register
+        </Button>
+        <SignOutButton />
+      </div>
     </div>
   );
 }
