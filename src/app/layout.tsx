@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Arcus • AWS Student Builder Group Attendance Portal",
   description:
-    "Real-time event check-in, DynamoDB cloud verification, and instant PDF attendance reporting for AWS Arcus.",
+    "Real-time event check-in, DynamoDB cloud verification, and CSV attendance reporting for AWS Arcus.",
 };
 
 export default function RootLayout({

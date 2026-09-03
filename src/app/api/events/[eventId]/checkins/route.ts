@@ -1,11 +1,11 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getEventCheckIns, getProfile } from "@/lib/dynamodb";
+import { listEventCheckIns } from "@/lib/dynamodb/attendance";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ eventId: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ eventId: string }> },
 ) {
   try {
     const { eventId } = await params;
@@ -13,51 +13,39 @@ export async function GET(
     if (!eventId) {
       return NextResponse.json(
         { error: "Missing eventId parameter" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!process.env.DYNAMODB_TABLE_NAME) {
       return NextResponse.json(
         { error: "Server configuration error: missing table configuration" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    const checkIns = await getEventCheckIns(eventId);
+    const checkIns = await listEventCheckIns(eventId);
+    const wantsJson = request.nextUrl.searchParams.get("format") === "json";
 
-    const enriched = await Promise.all(
-      checkIns.map(async (checkIn) => {
-        const sk = String(checkIn.SK ?? "");
-        const rawUuid = sk.replace(/^MEMBER#/, "");
-        const profile = rawUuid ? await getProfile(rawUuid) : null;
-        return {
-          sk,
-          full_name: String(profile?.full_name ?? ""),
-          student_id: String(profile?.student_id ?? ""),
-          course: String(profile?.course ?? ""),
-          department: String(profile?.department ?? ""),
-          scannedAt: String(checkIn.scannedAt ?? ""),
-          timestamp: String(checkIn.timestamp ?? ""),
-        };
-      })
-    );
+    if (wantsJson) {
+      return NextResponse.json({ checkIns }, { status: 200 });
+    }
 
     const header = "SK,full_name,student_id,course,department,scannedAt,timestamp";
-    const rows = enriched.map((row) =>
+    const rows = checkIns.map((row) =>
       [
-        csvEscape(row.sk),
+        csvEscape(row.SK),
         csvEscape(row.full_name),
         csvEscape(row.student_id),
         csvEscape(row.course),
         csvEscape(row.department),
         csvEscape(row.scannedAt),
-        csvEscape(row.timestamp),
-      ].join(",")
+        csvEscape(String(row.timestamp || "")),
+      ].join(","),
     );
 
     const csv = [header, ...rows].join("\r\n");
-    const filename = "checkins-" + eventId + ".csv";
+    const filename = "checkins-" + eventId.replace(/^EVENT#/, "") + ".csv";
 
     return new NextResponse(csv, {
       status: 200,
@@ -70,7 +58,7 @@ export async function GET(
     console.error("Error in GET /api/events/[eventId]/checkins:", error);
     return NextResponse.json(
       { error: "Failed to retrieve check-ins" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useAttendanceStore, AttendanceRecord } from "@/store/useAttendanceStore";
 import { useEventsStore } from "@/store/useEventsStore";
-import { generateAttendancePDF } from "@/utils/pdfFiller";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +16,6 @@ import {
 } from "@/components/ui/table";
 import {
   AlertDialog,
-  AlertDialogTrigger,
   AlertDialogContent,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -27,32 +25,25 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Trash2 } from "lucide-react";
 
-export function PDFExportSection() {
-  const { attendanceHistory, clearHistory, removeAttendanceRecord } = useAttendanceStore();
-  const events = useEventsStore((state) => state.events);
+export function AttendanceDashboard() {
+  const attendanceHistory = useAttendanceStore((state) => state.attendanceHistory);
+  const attendanceLoading = useAttendanceStore((state) => state.attendanceLoading);
+  const clearHistory = useAttendanceStore((state) => state.clearHistory);
+  const removeAttendanceRecord = useAttendanceStore(
+    (state) => state.removeAttendanceRecord,
+  );
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
-  const selectedEventName =
-    events.find((event) => event.PK === selectedEventPK)?.name ??
-    "AWS Arcus Member Event Check-in";
   const [searchQuery, setSearchQuery] = useState("");
   const [isClearAllOpen, setIsClearAllOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<AttendanceRecord | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  // calculate unique attendees by uuid / pk / student id
-  const uniqueUuids = Array.from(
-    new Set(
-      attendanceHistory.map(
-        (item) => item.SK || item.member.SK || item.member.PK || item.member.student_id || item.id,
-      ),
-    ),
-  );
-  const uniqueAttendeesCount = uniqueUuids.length;
   const totalScansCount = attendanceHistory.length;
 
   const latestRecord = attendanceHistory[0];
   const latestName = latestRecord ? latestRecord.member.full_name || "Member" : null;
 
-  // filter records by search query
   const query = searchQuery.trim().toLowerCase();
   const filteredRecords = attendanceHistory.filter((item) => {
     if (!query) return true;
@@ -69,8 +60,37 @@ export function PDFExportSection() {
     );
   });
 
-  const handleExportPDF = async () => {
-    await generateAttendancePDF(attendanceHistory, selectedEventName);
+  const handleExportCsv = async () => {
+    if (!selectedEventPK) {
+      return;
+    }
+
+    const eventId = selectedEventPK.replace(/^EVENT#/, "");
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      const response = await fetch(
+        `/api/events/${encodeURIComponent(eventId)}/checkins`,
+      );
+      if (!response.ok) {
+        throw new Error("Failed to download attendance CSV.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `checkins-${eventId}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Could not download attendance CSV.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleConfirmClearAll = () => {
@@ -85,9 +105,16 @@ export function PDFExportSection() {
     }
   };
 
+  const emptyMessage = attendanceLoading
+    ? "Loading attendance for this event..."
+    : searchQuery
+      ? `No students found matching "${searchQuery}"`
+      : selectedEventPK
+        ? "No records logged for this event yet."
+        : "Select an event to load attendance records.";
+
   return (
     <Card>
-      {/* modal dialog for clearing all records */}
       <AlertDialog open={isClearAllOpen} onOpenChange={setIsClearAllOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -108,7 +135,6 @@ export function PDFExportSection() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* modal dialog for removing a single attendee */}
       <AlertDialog
         open={recordToDelete !== null}
         onOpenChange={(open) => {
@@ -141,19 +167,23 @@ export function PDFExportSection() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* card header & main actions */}
       <CardHeader className="pb-4 border-b">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <CardTitle className="text-sm font-semibold">Attendance Dashboard</CardTitle>
             <CardDescription className="text-xs">
-              Live attendee tracking and PDF export
+              Live attendee tracking and CSV export
             </CardDescription>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={handleExportPDF}>
-              Download Attendance PDF
+            <Button
+              disabled={!selectedEventPK}
+              loading={isExporting}
+              onClick={handleExportCsv}
+              size="sm"
+            >
+              Download Attendance CSV
             </Button>
 
             {attendanceHistory.length > 0 && (
@@ -168,21 +198,13 @@ export function PDFExportSection() {
             )}
           </div>
         </div>
+        {exportError ? (
+          <p className="text-xs text-destructive">{exportError}</p>
+        ) : null}
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5 pt-5">
-        {/* metric dashboard cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="p-3.5 bg-muted/40 border rounded-lg">
-            <span className="text-[11px] text-muted-foreground block uppercase font-medium">
-              Unique Attendees
-            </span>
-            <span className="text-xl font-semibold text-foreground mt-0.5 block font-mono">
-              {uniqueAttendeesCount}
-            </span>
-            <span className="text-[11px] text-muted-foreground">Distinct students present</span>
-          </div>
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="p-3.5 bg-muted/40 border rounded-lg">
             <span className="text-[11px] text-muted-foreground block uppercase font-medium">
               Total Scans
@@ -206,7 +228,6 @@ export function PDFExportSection() {
           </div>
         </div>
 
-        {/* search input bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-sm">
             <Input
@@ -237,7 +258,6 @@ export function PDFExportSection() {
           </span>
         </div>
 
-        {/* attendance table with per-row remove button */}
         <div className="border rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
@@ -254,9 +274,7 @@ export function PDFExportSection() {
               {filteredRecords.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    {searchQuery
-                      ? `No students found matching "${searchQuery}"`
-                      : "No records logged in this session yet."}
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -284,7 +302,7 @@ export function PDFExportSection() {
                           className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           title={`Remove ${name}`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 />
                         </Button>
                       </TableCell>
                     </TableRow>

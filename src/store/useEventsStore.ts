@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { EVENT_GSI1PK, eventItemKey } from "@/store/dynamodb-keys";
+import { EVENT_GSI1PK } from "@/store/dynamodb-keys";
 
 /**
  * DynamoDB Event item
@@ -22,15 +22,16 @@ export interface AttendanceEvent {
   description: string;
 }
 
-type EventDetails = {
-  name: string;
-  description: string;
-};
-
 interface EventsState {
   events: AttendanceEvent[];
   selectedEventPK: string | null;
-  addEvent: (details: EventDetails) => AttendanceEvent;
+  eventsLoading: boolean;
+  eventsError: string | null;
+  addEvent: (event: AttendanceEvent) => void;
+  removeEvent: (pk: string) => void;
+  setEvents: (events: AttendanceEvent[]) => void;
+  setEventsLoading: (loading: boolean) => void;
+  setEventsError: (error: string | null) => void;
   setSelectedEventPK: (pk: string | null) => void;
 }
 
@@ -39,23 +40,11 @@ type PersistedEventsState = {
   selectedEventPK?: unknown;
 };
 
-function createEventItem({ name, description }: EventDetails): AttendanceEvent {
-  const id = eventItemKey(crypto.randomUUID());
-  return {
-    PK: id,
-    SK: id,
-    GSI1PK: EVENT_GSI1PK,
-    GSI1SK: String(Date.now()),
-    name,
-    description,
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function migrateEvent(raw: unknown): AttendanceEvent | null {
+export function parseAttendanceEvent(raw: unknown): AttendanceEvent | null {
   if (!isRecord(raw)) {
     return null;
   }
@@ -110,14 +99,14 @@ function migratePersistedEvents(
 
   const events = Array.isArray(persisted.events)
     ? persisted.events
-        .map(migrateEvent)
+        .map(parseAttendanceEvent)
         .filter((event): event is AttendanceEvent => event !== null)
     : [];
   const selectedEventPK =
     typeof persisted.selectedEventPK === "string" &&
     events.some((event) => event.PK === persisted.selectedEventPK)
       ? persisted.selectedEventPK
-      : (events[0]?.PK ?? null);
+      : null;
 
   return { events, selectedEventPK };
 }
@@ -127,25 +116,56 @@ export const useEventsStore = create<EventsState>()(
     (set) => ({
       events: [],
       selectedEventPK: null,
+      eventsLoading: false,
+      eventsError: null,
 
-      addEvent: ({ name, description }) => {
-        const event = createEventItem({ name, description });
-
+      addEvent: (event) => {
         set((state) => ({
-          events: [event, ...state.events],
+          events: [event, ...state.events.filter((item) => item.PK !== event.PK)],
           selectedEventPK: event.PK,
         }));
-
-        return event;
       },
+
+      removeEvent: (pk) => {
+        set((state) => {
+          const events = state.events.filter((event) => event.PK !== pk);
+          const selectedEventPK =
+            state.selectedEventPK === pk
+              ? (events[0]?.PK ?? null)
+              : state.selectedEventPK;
+
+          return { events, selectedEventPK };
+        });
+      },
+
+      setEvents: (events) => {
+        set((state) => ({
+          events,
+          eventsError: null,
+          selectedEventPK:
+            state.selectedEventPK &&
+            events.some((event) => event.PK === state.selectedEventPK)
+              ? state.selectedEventPK
+              : null,
+        }));
+      },
+
+      setEventsLoading: (eventsLoading) => set({ eventsLoading }),
+
+      setEventsError: (eventsError) => set({ eventsError }),
 
       setSelectedEventPK: (selectedEventPK) => set({ selectedEventPK }),
     }),
     {
-      name: "arcus-events",
-      version: 1,
-      migrate: (persisted) =>
-        migratePersistedEvents(persisted as PersistedEventsState),
+      name: "arcus-events-v2",
+      version: 2,
+      migrate: (persisted, version) => {
+        if (version < 2) {
+          return { events: [], selectedEventPK: null };
+        }
+
+        return migratePersistedEvents(persisted);
+      },
       merge: (persisted, current) => ({
         ...current,
         ...migratePersistedEvents(persisted),

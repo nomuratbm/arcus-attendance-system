@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { createProfile } from "@/lib/dynamodb";
+import { createMember } from "@/lib/dynamodb/members";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await createProfile(uuid, { full_name, student_id, course, department });
+    await createMember(uuid, { full_name, student_id, course, department });
 
     const qrDataUrl = await QRCode.toDataURL(uuid, { 
       type: "image/png",

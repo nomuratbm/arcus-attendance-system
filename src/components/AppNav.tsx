@@ -23,8 +23,7 @@ function preloadScanner() {
   }
 
   void import("@/components/QRScanner");
-  void import("@/components/PDFExportSection");
-  void import("@/components/MemberProfileCard");
+  void import("@/components/AttendanceDashboard");
 }
 
 export function AppNav() {

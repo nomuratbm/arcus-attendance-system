@@ -21,6 +21,8 @@ export function QRScanner() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { setCurrentMember, addAttendanceRecord, setScanStatus, setAlert } = useAttendanceStore();
+  const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
+  const canScan = Boolean(selectedEventPK);
 
   const processScannedUuid = useCallback(
     async (scannedText: string) => {
@@ -66,6 +68,21 @@ export function QRScanner() {
             trimmedUuid,
           );
           setCurrentMember(member);
+
+          const memberSK = member.SK || member.PK;
+          const alreadyCheckedIn = useAttendanceStore
+            .getState()
+            .attendanceHistory.some((item) => item.SK === memberSK);
+
+          if (alreadyCheckedIn) {
+            setScanStatus("success");
+            setAlert(
+              "info",
+              `Already checked in: ${member.full_name || "Member Found"}`,
+            );
+            return;
+          }
+
           const record = addAttendanceRecord(member);
           if (!record) {
             setScanStatus("error");
@@ -78,13 +95,28 @@ export function QRScanner() {
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
             const rawMemberUuid = (record.SK || member.PK).replace(/^MEMBER#/, "");
-            fetch("/api/checkin", {
+            void fetch("/api/checkin", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ eventId: rawEventId, uuid: rawMemberUuid }),
-            }).catch((err) => {
-              console.error("Check-in persist error:", err);
-            });
+              body: JSON.stringify({
+                eventId: rawEventId,
+                uuid: rawMemberUuid,
+                scannedAt: record.scannedAt,
+                timestamp: record.timestamp,
+              }),
+            })
+              .then(async (checkInResponse) => {
+                if (checkInResponse.ok || checkInResponse.status === 409) {
+                  return;
+                }
+                console.error(
+                  "Check-in persist error:",
+                  await checkInResponse.text(),
+                );
+              })
+              .catch((err) => {
+                console.error("Check-in persist error:", err);
+              });
           }
         } else {
           setCurrentMember(null);
@@ -116,6 +148,12 @@ export function QRScanner() {
   );
 
   const startCamera = async () => {
+    if (!useEventsStore.getState().selectedEventPK) {
+      setScanStatus("error");
+      setAlert("error", "Select an event before scanning");
+      return;
+    }
+
     try {
       await stopCamera();
       await new Promise((r) => setTimeout(r, 100));
@@ -176,6 +214,15 @@ export function QRScanner() {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!useEventsStore.getState().selectedEventPK) {
+      setScanStatus("error");
+      setAlert("error", "Select an event before scanning");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -219,6 +266,12 @@ export function QRScanner() {
   };
 
   useEffect(() => {
+    if (!canScan && scannerActive) {
+      void stopCamera();
+    }
+  }, [canScan, scannerActive]);
+
+  useEffect(() => {
     return () => {
       stopCamera();
     };
@@ -237,6 +290,7 @@ export function QRScanner() {
               <Button
                 variant={scannerMode === "camera" ? "default" : "ghost"}
                 size="xs"
+                disabled={!canScan}
                 onClick={() => {
                   stopCamera();
                   setScannerMode("camera");
@@ -247,6 +301,7 @@ export function QRScanner() {
               <Button
                 variant={scannerMode === "file" ? "default" : "ghost"}
                 size="xs"
+                disabled={!canScan}
                 onClick={() => {
                   stopCamera();
                   setScannerMode("file");
@@ -279,20 +334,35 @@ export function QRScanner() {
           {/* camera off placeholder */}
           {scannerMode === "camera" && !scannerActive && (
             <div className="py-14 text-center bg-muted/40 border border-dashed rounded-md text-muted-foreground text-xs">
-              <p>Camera is currently inactive</p>
-              <p className="text-[11px] text-muted-foreground/70 mt-1">
-                Click &apos;Start Camera&apos; to begin scanning
-              </p>
+              {canScan ? (
+                <>
+                  <p>Camera is currently inactive</p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">
+                    Click &apos;Start Camera&apos; to begin scanning
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>Select an event to start scanning</p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">
+                    Camera scanning is disabled until an active event is chosen
+                  </p>
+                </>
+              )}
             </div>
           )}
 
-          {/* upload dropzone */}
           {scannerMode === "file" && (
             <div className="flex flex-col items-center justify-center py-10 px-4 bg-muted/20 text-center border border-dashed rounded-md">
               <span className="text-sm font-medium text-foreground mb-4">
-                {loading ? "Reading image..." : "Select your QR code image"}
+                {!canScan
+                  ? "Select an event to upload a QR code"
+                  : loading
+                    ? "Reading image..."
+                    : "Select your QR code image"}
               </span>
-              <Button 
+              <Button
+                disabled={!canScan || loading}
                 variant="secondary"
                 onClick={() => fileInputRef.current?.click()}
               >
@@ -302,6 +372,7 @@ export function QRScanner() {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                disabled={!canScan}
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -318,7 +389,7 @@ export function QRScanner() {
               size="sm"
               variant={scannerActive ? "destructive" : "default"}
               onClick={scannerActive ? stopCamera : startCamera}
-              disabled={loading}
+              disabled={loading || (!scannerActive && !canScan)}
             >
               {loading ? "Verifying..." : scannerActive ? "Stop Camera" : "Start Camera"}
             </Button>
@@ -329,13 +400,22 @@ export function QRScanner() {
             )}
           </>
         ) : (
-          <Button variant="outline" size="sm" className="w-full" onClick={() => {
-            resetScanner();
-            if (fileInputRef.current) {
-              fileInputRef.current.value = "";
-              fileInputRef.current.click();
-            }
-          }}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={!canScan || loading}
+            onClick={() => {
+              if (!canScan) {
+                return;
+              }
+              resetScanner();
+              if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+                fileInputRef.current.click();
+              }
+            }}
+          >
             Upload Another File
           </Button>
         )}
