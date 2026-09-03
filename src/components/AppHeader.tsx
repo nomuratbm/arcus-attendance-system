@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const headerTitle = (
   <div className="flex min-w-0 items-center gap-2">
     <h1 className="truncate text-base font-semibold text-foreground">
-      Arcus Attendance
+      A2S
     </h1>
     <Badge className="max-sm:hidden" size="sm" variant="outline">
       By AWS-SBG: Arcus
