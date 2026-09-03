@@ -24,6 +24,7 @@ export function QRScanner() {
 
   const processScannedUuid = useCallback(
     async (scannedText: string) => {
+      console.log("Scanned text from QR:", scannedText);
       const trimmedUuid = scannedText.trim();
       if (!trimmedUuid) return;
 
@@ -75,6 +76,15 @@ export function QRScanner() {
               "success",
               `Checked in: ${member.full_name || "Member Found"}`,
             );
+            const rawEventId = record.PK.replace(/^EVENT#/, "");
+            const rawMemberUuid = (record.SK || member.PK).replace(/^MEMBER#/, "");
+            fetch("/api/checkin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ eventId: rawEventId, uuid: rawMemberUuid }),
+            }).catch((err) => {
+              console.error("Check-in persist error:", err);
+            });
           }
         } else {
           setCurrentMember(null);
@@ -278,13 +288,16 @@ export function QRScanner() {
 
           {/* upload dropzone */}
           {scannerMode === "file" && (
-            <label className="flex flex-col items-center justify-center py-14 px-4 cursor-pointer bg-muted/40 hover:bg-muted/70 transition-colors text-center border border-dashed rounded-md">
-              <span className="text-xs font-medium text-foreground">
-                {loading ? "Reading image..." : "Click to select a QR code image"}
+            <div className="flex flex-col items-center justify-center py-10 px-4 bg-muted/20 text-center border border-dashed rounded-md">
+              <span className="text-sm font-medium text-foreground mb-4">
+                {loading ? "Reading image..." : "Select your QR code image"}
               </span>
-              <span className="text-[11px] text-muted-foreground mt-1">
-                Supports PNG, JPG, JPEG
-              </span>
+              <Button 
+                variant="secondary"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Choose File
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -292,7 +305,7 @@ export function QRScanner() {
                 onChange={handleFileUpload}
                 className="hidden"
               />
-            </label>
+            </div>
           )}
         </CardContent>
       </div>
@@ -316,7 +329,13 @@ export function QRScanner() {
             )}
           </>
         ) : (
-          <Button variant="outline" size="sm" className="w-full" onClick={resetScanner}>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => {
+            resetScanner();
+            if (fileInputRef.current) {
+              fileInputRef.current.value = "";
+              fileInputRef.current.click();
+            }
+          }}>
             Upload Another File
           </Button>
         )}
