@@ -53,6 +53,10 @@ type ImportSummary = {
 };
 
 export function OrganizationsImport() {
+  const [addFormKey, setAddFormKey] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addResult, setAddResult] = useState<ImportResult | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -72,6 +76,58 @@ export function OrganizationsImport() {
   useEffect(() => {
     void loadOrganizations();
   }, [loadOrganizations]);
+
+  async function handleAdd(formValues: Record<string, unknown>) {
+    const name = String(formValues.name ?? "").trim();
+    const organizationId = String(
+      formValues.organization_id ?? "",
+    ).trim();
+
+    if (!name) {
+      setAddError("Enter an organization name.");
+      return;
+    }
+
+    setAdding(true);
+    setAddError(null);
+    setAddResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("name", name);
+      formData.set("organization_id", organizationId);
+      const response = await fetch("/api/organizations", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await readResponseJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(data, "Could not add the organization."),
+        );
+      }
+
+      const parsedSummary = parseImportSummary(data);
+      const result = parsedSummary?.results[0];
+      if (!parsedSummary || parsedSummary.total !== 1 || !result) {
+        throw new Error("The server returned an invalid organization result.");
+      }
+
+      setAddResult(result);
+      setAddFormKey((current) => current + 1);
+      await loadOrganizations(true);
+    } catch (error) {
+      setAddError(
+        requestErrorMessage(
+          error,
+          "Could not add the organization. Please try again.",
+        ),
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
 
   async function handleImport() {
     if (!file) {
@@ -121,6 +177,72 @@ export function OrganizationsImport() {
 
   return (
     <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Add organization</CardTitle>
+          <CardDescription>
+            Add one organization directly. Leave the UUID empty to generate
+            one automatically.
+          </CardDescription>
+        </CardHeader>
+        <Form
+          className="contents"
+          key={addFormKey}
+          onFormSubmit={handleAdd}
+        >
+          <CardPanel className="flex flex-col gap-4">
+            <Field className="w-full" name="name">
+              <FieldLabel>Organization name</FieldLabel>
+              <Input
+                autoComplete="organization"
+                maxLength={200}
+                name="name"
+                placeholder="Example: AWS Student Builder Group — Arcus"
+                required
+                type="text"
+              />
+              <FieldError>Please enter an organization name.</FieldError>
+            </Field>
+            <Field className="w-full" name="organization_id">
+              <FieldLabel>Organization UUID (optional)</FieldLabel>
+              <Input
+                autoComplete="off"
+                maxLength={36}
+                name="organization_id"
+                placeholder="Generated automatically when empty"
+                type="text"
+              />
+              <FieldDescription>
+                Existing organizations reject a different supplied UUID.
+              </FieldDescription>
+            </Field>
+          </CardPanel>
+          <CardFooter className="justify-end">
+            <Button disabled={adding} loading={adding} type="submit">
+              Add organization
+            </Button>
+          </CardFooter>
+        </Form>
+      </Card>
+
+      {addError ? (
+        <Alert variant="error">
+          <CircleAlertIcon />
+          <AlertTitle>Could not add organization</AlertTitle>
+          <AlertDescription>{addError}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {addResult ? (
+        <Alert variant="success">
+          <CircleCheckIcon />
+          <AlertTitle>
+            Organization {addResult.status === "created" ? "added" : "updated"}
+          </AlertTitle>
+          <AlertDescription>{addResult.name}</AlertDescription>
+        </Alert>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Import organizations</CardTitle>
