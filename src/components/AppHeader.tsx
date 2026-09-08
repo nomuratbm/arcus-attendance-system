@@ -40,6 +40,11 @@ export function AppHeader({ subtitle, children }: AppHeaderProps) {
           <ThemeToggle />
         </div>
       </div>
+      <div className="border-t bg-muted/40">
+        <div className="mx-auto w-full max-w-5xl px-4 py-1.5 text-xs text-muted-foreground sm:px-6">
+          Made by AWS-SBG: Arcus
+        </div>
+      </div>
     </header>
   );
 }
@@ -47,8 +52,7 @@ export function AppHeader({ subtitle, children }: AppHeaderProps) {
 function AppFooter() {
   return (
     <footer className="mt-auto border-t bg-card">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <p>By AWS-SBG: Arcus</p>
+      <div className="mx-auto flex w-full max-w-5xl px-4 py-3 text-xs text-muted-foreground sm:justify-end sm:px-6">
         <p>
           Bug reports:{" "}
           <a
