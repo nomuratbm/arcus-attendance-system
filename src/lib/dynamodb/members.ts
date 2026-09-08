@@ -56,7 +56,7 @@ export async function createMember(
                 SK: key,
                 ...details,
                 student_id: studentId,
-                current_organization: uniqueOrganizationIds[0] ?? "",
+                current_organization: "",
               },
               ConditionExpression: "attribute_not_exists(PK)",
             },

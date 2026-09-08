@@ -42,22 +42,16 @@ function eventFromResponse(value: unknown): AttendanceEvent | null {
 export function AddEventForm() {
   const [formKey, setFormKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<
+    string | null
+  >(null);
   const addEvent = useEventsStore((state) => state.addEvent);
-  const selectedOrganizationId = useEventsStore(
-    (state) => state.selectedOrganizationId,
-  );
-  const setSelectedOrganizationId = useEventsStore(
-    (state) => state.setSelectedOrganizationId,
-  );
   const organizations = useOrganizationsStore((state) => state.organizations);
   const organizationsError = useOrganizationsStore(
     (state) => state.organizationsError,
   );
   const organizationsLoading = useOrganizationsStore(
     (state) => state.organizationsLoading,
-  );
-  const organizationsLoaded = useOrganizationsStore(
-    (state) => state.organizationsLoaded,
   );
   const loadOrganizations = useOrganizationsStore(
     (state) => state.loadOrganizations,
@@ -71,26 +65,19 @@ export function AddEventForm() {
     void loadOrganizations();
   }, [loadOrganizations]);
 
-  useEffect(() => {
-    if (
-      organizationsLoaded &&
-      !organizationsLoading &&
-      !selectedOrganization
-    ) {
-      setSelectedOrganizationId(organizations[0]?.value ?? null);
-    }
-  }, [
-    organizations,
-    organizationsLoaded,
-    organizationsLoading,
-    selectedOrganization,
-    setSelectedOrganizationId,
-  ]);
-
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const name = String(formValues.name ?? "").trim();
     const description = String(formValues.description ?? "").trim();
     const organization = selectedOrganizationId ?? "";
+
+    if (!name || !description) {
+      toastManager.add({
+        type: "error",
+        title: "Required fields are empty",
+        description: "Enter an event name and description before submitting.",
+      });
+      return;
+    }
 
     if (!organization) {
       toastManager.add({
@@ -116,6 +103,7 @@ export function AddEventForm() {
 
       if (response.ok && event) {
         addEvent(event);
+        setSelectedOrganizationId(null);
         toastManager.add({
           type: "success",
           title: "Event added",
@@ -234,7 +222,12 @@ export function AddEventForm() {
             </Field>
           </CardPanel>
           <CardFooter className="justify-end gap-2">
-            <Button disabled={submitting} type="reset" variant="ghost">
+            <Button
+              disabled={submitting}
+              onClick={() => setSelectedOrganizationId(null)}
+              type="reset"
+              variant="ghost"
+            >
               Clear
             </Button>
             <Button loading={submitting} type="submit">

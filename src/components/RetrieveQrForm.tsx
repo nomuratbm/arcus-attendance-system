@@ -43,7 +43,6 @@ type ErrorModal = {
 type QrMemberContext = {
   studentId: string;
   organizations: OrganizationOption[];
-  currentOrganization: string;
 };
 
 export function RetrieveQrForm() {
@@ -59,6 +58,10 @@ export function RetrieveQrForm() {
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const studentNumber = String(formValues.studentNumber ?? "").trim();
     if (!studentNumber) {
+      setErrorModal({
+        title: "Student number required",
+        description: "Enter a student number before retrieving a QR code.",
+      });
       return;
     }
 
@@ -92,17 +95,6 @@ export function RetrieveQrForm() {
       }
 
       const organizations = parseOrganizationOptions(data);
-      const organizationIds = organizations.map(
-        (organization) => organization.value,
-      );
-      const currentOrganization =
-        typeof data === "object" &&
-        data !== null &&
-        "current_organization" in data &&
-        typeof data.current_organization === "string" &&
-        organizationIds.includes(data.current_organization)
-          ? data.current_organization
-          : (organizationIds[0] ?? "");
 
       const url = await generate(studentNumber);
       if (!url) {
@@ -116,7 +108,6 @@ export function RetrieveQrForm() {
       setQrMemberContext({
         studentId: studentNumber,
         organizations,
-        currentOrganization,
       });
 
       setTimeout(() => {
@@ -185,8 +176,7 @@ export function RetrieveQrForm() {
         </Form>
         {dataUrl && qrMemberContext ? (
           <QrCodePreview
-            key={`${qrMemberContext.studentId}-${qrMemberContext.currentOrganization}`}
-            currentOrganization={qrMemberContext.currentOrganization}
+            key={qrMemberContext.studentId}
             dataUrl={dataUrl}
             organizations={qrMemberContext.organizations}
             ref={qrRef}

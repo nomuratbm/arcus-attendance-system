@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 import { memberItemKey } from "@/store/dynamodb-keys";
 import type { Member } from "@/store/member-item";
 
@@ -20,6 +19,7 @@ export interface StudentFormData {
   programYear: string;
   department: string;
   organizationIds: string[];
+  noOrganizationSelected: boolean;
 }
 
 interface StudentFormState extends StudentFormData {
@@ -34,42 +34,28 @@ const emptyFormData: StudentFormData = {
   programYear: "",
   department: "",
   organizationIds: [],
+  noOrganizationSelected: false,
 };
 
-export const useStudentFormStore = create<StudentFormState>()(
-  persist(
-    (set, get) => ({
-      ...emptyFormData,
+export const useStudentFormStore = create<StudentFormState>((set, get) => ({
+  ...emptyFormData,
 
-      setFormData: (data) => set((state) => ({ ...state, ...data })),
+  setFormData: (data) => set((state) => ({ ...state, ...data })),
 
-      clearFormData: () => set(emptyFormData),
+  clearFormData: () => set(emptyFormData),
 
-      buildMemberItem: () => {
-        const state = get();
-        const studentId = state.studentNumber.trim();
-        const key = memberItemKey(studentId);
-        return {
-          PK: key,
-          SK: key,
-          full_name: state.studentName.trim(),
-          student_id: studentId,
-          course: state.programYear.trim(),
-          department: state.department.trim(),
-          current_organization: state.organizationIds[0] ?? "",
-        };
-      },
-    }),
-    {
-      name: "arcus-student-form",
-      storage: createJSONStorage(() => sessionStorage),
-      partialize: (state) => ({
-        studentName: state.studentName,
-        studentNumber: state.studentNumber,
-        programYear: state.programYear,
-        department: state.department,
-        organizationIds: state.organizationIds,
-      }),
-    },
-  ),
-);
+  buildMemberItem: () => {
+    const state = get();
+    const studentId = state.studentNumber.trim();
+    const key = memberItemKey(studentId);
+    return {
+      PK: key,
+      SK: key,
+      full_name: state.studentName.trim(),
+      student_id: studentId,
+      course: state.programYear.trim(),
+      department: state.department.trim(),
+      current_organization: "",
+    };
+  },
+}));

@@ -2,9 +2,9 @@
 
 import {
   Fragment,
+  useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,6 @@ import { useStudentFormStore } from "@/store/useStudentFormStore";
 type QrMemberContext = {
   studentId: string;
   organizations: OrganizationOption[];
-  currentOrganization: string;
 };
 
 const departmentSelectGroups = departmentCampuses.map((group, index) => (
@@ -115,20 +114,13 @@ export function StudentDetailsForm() {
     useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const { dataUrl, generate, clear } = useQrCode();
-  const sessionReady = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
+
+  useEffect(
+    () => () => {
+      useStudentFormStore.getState().clearFormData();
+    },
+    [],
   );
-  const draft = sessionReady
-    ? useStudentFormStore.getState()
-    : {
-        studentName: "",
-        studentNumber: "",
-        programYear: "",
-        department: "",
-        organizationIds: [],
-      };
 
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const studentName = String(formValues.studentName ?? "").trim();
@@ -143,6 +135,29 @@ export function StudentDetailsForm() {
       department,
     });
     const formState = useStudentFormStore.getState();
+
+    if (!studentName || !studentNumber || !programYear || !department) {
+      toastManager.add({
+        type: "error",
+        title: "Required fields are empty",
+        description: "Complete every required student field before submitting.",
+      });
+      return;
+    }
+
+    if (
+      formState.organizationIds.length === 0 &&
+      !formState.noOrganizationSelected
+    ) {
+      toastManager.add({
+        type: "error",
+        title: "Select an organization option",
+        description:
+          "Choose at least one organization or select No organization.",
+      });
+      return;
+    }
+
     const memberItem = formState.buildMemberItem();
 
     setSubmitting(true);
@@ -156,6 +171,7 @@ export function StudentDetailsForm() {
           course: memberItem.course,
           department: memberItem.department,
           organization_ids: formState.organizationIds,
+          no_organization: formState.noOrganizationSelected,
         }),
       });
 
@@ -163,17 +179,9 @@ export function StudentDetailsForm() {
 
       if (response.ok) {
         const selectedOrganizations = parseOrganizationOptions(data);
-        const currentOrganization =
-          typeof data === "object" &&
-          data !== null &&
-          "current_organization" in data &&
-          typeof data.current_organization === "string"
-            ? data.current_organization
-            : (formState.organizationIds[0] ?? "");
         setQrMemberContext({
           studentId: memberItem.student_id,
           organizations: selectedOrganizations,
-          currentOrganization,
         });
         await generate(memberItem.student_id);
         toastManager.add({
@@ -232,7 +240,7 @@ export function StudentDetailsForm() {
           </CardDescription>
         </CardHeader>
         <Form
-          key={`${sessionReady ? "session" : "pending"}-${formKey}`}
+          key={formKey}
           className="contents"
           onFormSubmit={handleFormSubmit}
         >
@@ -241,7 +249,6 @@ export function StudentDetailsForm() {
               <FieldLabel>Student Name</FieldLabel>
               <Input
                 autoComplete="name"
-                defaultValue={draft.studentName}
                 name="studentName"
                 onChange={(event) => {
                   useStudentFormStore.getState().setFormData({
@@ -259,7 +266,6 @@ export function StudentDetailsForm() {
               <FieldLabel>Student Number</FieldLabel>
               <Input
                 autoComplete="off"
-                defaultValue={draft.studentNumber}
                 inputMode="numeric"
                 maxLength={MAX_STUDENT_NUMBER_LENGTH}
                 name="studentNumber"
@@ -279,7 +285,6 @@ export function StudentDetailsForm() {
               <FieldLabel>Program - Year</FieldLabel>
               <Input
                 autoComplete="off"
-                defaultValue={draft.programYear}
                 name="programYear"
                 onChange={(event) => {
                   useStudentFormStore.getState().setFormData({
@@ -295,7 +300,7 @@ export function StudentDetailsForm() {
 
             <Field className="w-full" name="department">
               <FieldLabel>Department</FieldLabel>
-              <DepartmentSelect defaultValue={draft.department} />
+              <DepartmentSelect defaultValue="" />
               <FieldError>Please select a department.</FieldError>
             </Field>
           </CardPanel>
@@ -310,8 +315,7 @@ export function StudentDetailsForm() {
         </Form>
         {dataUrl && qrMemberContext ? (
           <QrCodePreview
-            key={`${qrMemberContext.studentId}-${qrMemberContext.currentOrganization}`}
-            currentOrganization={qrMemberContext.currentOrganization}
+            key={qrMemberContext.studentId}
             dataUrl={dataUrl}
             organizations={qrMemberContext.organizations}
             ref={qrRef}

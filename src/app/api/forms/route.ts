@@ -11,17 +11,31 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { full_name, student_id, course, department, organization_ids } =
-      body as {
+    const {
+      full_name,
+      student_id,
+      course,
+      department,
+      organization_ids,
+      no_organization,
+    } = body as {
       full_name: string;
       student_id: string;
       course: string;
       department: string;
       organization_ids: unknown;
+      no_organization: unknown;
     };
 
+    const normalizedFullName =
+      typeof full_name === "string" ? full_name.trim() : "";
     const normalizedStudentId =
       typeof student_id === "string" ? student_id.trim() : "";
+    const normalizedCourse =
+      typeof course === "string" ? course.trim() : "";
+    const normalizedDepartment =
+      typeof department === "string" ? department.trim() : "";
+    const noOrganization = no_organization === true;
 
     if (normalizedStudentId.length > MAX_STUDENT_NUMBER_LENGTH) {
       return NextResponse.json(
@@ -53,10 +67,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (
-      !full_name ||
+      !normalizedFullName ||
       !normalizedStudentId ||
-      !course ||
-      !department ||
+      !normalizedCourse ||
+      !normalizedDepartment ||
+      (organizationIds.length === 0 && !noOrganization) ||
+      (organizationIds.length > 0 && noOrganization) ||
       organizationIds.length > MAX_MEMBER_ORGANIZATIONS ||
       organizationIds.length !== requestedOrganizationIds.length
     ) {
@@ -75,11 +91,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await createMember({
-      full_name,
+      full_name: normalizedFullName,
       student_id: normalizedStudentId,
-      course,
-      department,
-      current_organization: organizationIds[0] ?? "",
+      course: normalizedCourse,
+      department: normalizedDepartment,
+      current_organization: "",
     }, organizationIds);
 
     if (result.status === "already-exists") {
@@ -95,7 +111,7 @@ export async function POST(request: NextRequest) {
         student_id: normalizedStudentId,
         organization_ids: organizationIds,
         organizations: selectedOrganizations,
-        current_organization: organizationIds[0] ?? "",
+        current_organization: "",
       },
       { status: 201 }
     );

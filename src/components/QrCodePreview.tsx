@@ -30,7 +30,6 @@ type QrCodePreviewProps = {
   dataUrl: string;
   studentId: string;
   organizations: OrganizationOption[];
-  currentOrganization: string;
   ref?: Ref<HTMLDivElement>;
 };
 
@@ -38,17 +37,12 @@ export function QrCodePreview({
   dataUrl,
   studentId,
   organizations,
-  currentOrganization,
   ref,
 }: QrCodePreviewProps) {
   const availableOrganizations = [noOrganizationOption, ...organizations];
-  const initialOrganization = organizations.some(
-    (organization) => organization.value === currentOrganization,
-  )
-    ? currentOrganization
-    : NO_ORGANIZATION_VALUE;
-  const [selectedOrganization, setSelectedOrganization] =
-    useState(initialOrganization);
+  const [selectedOrganization, setSelectedOrganization] = useState<
+    string | null
+  >(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedItem =
@@ -132,7 +126,9 @@ export function QrCodePreview({
             ? error
             : saving
               ? "Updating organization..."
-              : selectedOrganization === NO_ORGANIZATION_VALUE
+              : selectedOrganization === null
+                ? "Select the organization represented for attendance."
+                : selectedOrganization === NO_ORGANIZATION_VALUE
                 ? "Attendance will not represent an organization."
                 : "Attendance will be recorded under this organization."}
         </FieldDescription>

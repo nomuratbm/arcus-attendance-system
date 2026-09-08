@@ -86,9 +86,6 @@ export function EventSelector() {
   const organizationsLoading = useOrganizationsStore(
     (state) => state.organizationsLoading,
   );
-  const organizationsLoaded = useOrganizationsStore(
-    (state) => state.organizationsLoaded,
-  );
   const loadOrganizations = useOrganizationsStore(
     (state) => state.loadOrganizations,
   );
@@ -98,21 +95,12 @@ export function EventSelector() {
     ) ?? null;
 
   useEffect(() => {
+    setSelectedEventPK(null);
+    setSelectedOrganizationId(null);
     void loadOrganizations();
-  }, [loadOrganizations]);
-
-  useEffect(() => {
-    if (!organizationsLoaded || organizationsLoading) {
-      return;
-    }
-    if (!selectedOrganization) {
-      setSelectedOrganizationId(organizations[0]?.value ?? null);
-    }
   }, [
-    organizations,
-    organizationsLoaded,
-    organizationsLoading,
-    selectedOrganization,
+    loadOrganizations,
+    setSelectedEventPK,
     setSelectedOrganizationId,
   ]);
 

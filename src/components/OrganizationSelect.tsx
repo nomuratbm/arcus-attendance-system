@@ -23,6 +23,9 @@ import { useStudentFormStore } from "@/store/useStudentFormStore";
 
 export function OrganizationSelect() {
   const selectedIds = useStudentFormStore((state) => state.organizationIds);
+  const noOrganizationSelected = useStudentFormStore(
+    (state) => state.noOrganizationSelected,
+  );
   const setFormData = useStudentFormStore((state) => state.setFormData);
   const organizations = useOrganizationsStore((state) => state.organizations);
   const organizationsError = useOrganizationsStore(
@@ -44,7 +47,9 @@ export function OrganizationSelect() {
   const selectedOptions =
     selectedOrganizations.length > 0
       ? selectedOrganizations
-      : [noOrganizationOption];
+      : noOrganizationSelected
+        ? [noOrganizationOption]
+        : [];
 
   useEffect(() => {
     void loadOrganizations();
@@ -88,6 +93,12 @@ export function OrganizationSelect() {
               selectedNoOrganization && selectedIds.length > 0
                 ? []
                 : organizationIds,
+            noOrganizationSelected:
+              selectedNoOrganization && selectedIds.length > 0
+                ? true
+                : organizationIds.length > 0
+                  ? false
+                  : selectedNoOrganization,
           });
         }}
         value={selectedOptions}
