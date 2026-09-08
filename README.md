@@ -42,6 +42,18 @@ The app uses one table. Each item has a composite key.
 - **PK** (partition key) groups related items.
 - **SK** (sort key) identifies one item in that group.
 
+### Organization registry deployment
+
+Organization dropdowns query a global secondary index named `GSI4`. Configure
+the index with `GSI4PK` as its partition key and `GSI4SK` as its sort key.
+Use an `ALL` projection, or an `INCLUDE` projection containing `org_name` and
+`normalized_org_name`.
+Existing organization items must be backfilled with `GSI4PK`, `GSI4SK`,
+`organization_id`, and `normalized_org_name` before switching to the
+DynamoDB-backed registry. The `/organizations` admin page can then create or
+update organizations from CSV files. The optional second CSV column is the
+organization UUID; one is generated for new organizations when omitted.
+
 The prefix before `#` marks the item type. Example: `MEMBER#` or `EVENT#`.
 
 ### Member item

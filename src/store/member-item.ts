@@ -5,4 +5,5 @@ export interface Member {
   student_id: string;
   course: string;
   department: string;
+  current_organization: string;
 }

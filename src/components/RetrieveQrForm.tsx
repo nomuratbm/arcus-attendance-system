@@ -24,16 +24,34 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useQrCode } from "@/hooks/use-qr-code";
+import {
+  parseOrganizationOptions,
+  type OrganizationOption,
+} from "@/lib/organizations";
+import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
+import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 type ErrorModal = {
   title: string;
   description: string;
 };
 
+type QrMemberContext = {
+  studentId: string;
+  organizations: OrganizationOption[];
+  currentOrganization: string;
+};
+
 export function RetrieveQrForm() {
   const [formKey, setFormKey] = useState(0);
   const [checking, setChecking] = useState(false);
   const [errorModal, setErrorModal] = useState<ErrorModal | null>(null);
+  const [qrMemberContext, setQrMemberContext] =
+    useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const { dataUrl, generating, generate, clear } = useQrCode();
   const busy = checking || generating;
@@ -45,13 +63,14 @@ export function RetrieveQrForm() {
     }
 
     clear();
+    setQrMemberContext(null);
     setChecking(true);
 
     try {
       const response = await fetch(
         `/api/retrieve?student_id=${encodeURIComponent(studentNumber)}`,
       );
-      const data: unknown = await response.json();
+      const data = await readResponseJson(response);
       const registered =
         typeof data === "object" &&
         data !== null &&
@@ -64,10 +83,26 @@ export function RetrieveQrForm() {
           description:
             response.status === 404
               ? "This student number is not registered. Go to Register first to create a QR code."
-              : "Something went wrong while checking this student number. Please try again.",
+              : apiErrorMessage(
+                  data,
+                  "Something went wrong while checking this student number. Please try again.",
+                ),
         });
         return;
       }
+
+      const organizations = parseOrganizationOptions(data);
+      const organizationIds = organizations.map(
+        (organization) => organization.value,
+      );
+      const currentOrganization =
+        typeof data === "object" &&
+        data !== null &&
+        "current_organization" in data &&
+        typeof data.current_organization === "string" &&
+        organizationIds.includes(data.current_organization)
+          ? data.current_organization
+          : (organizationIds[0] ?? "");
 
       const url = await generate(studentNumber);
       if (!url) {
@@ -78,13 +113,22 @@ export function RetrieveQrForm() {
         return;
       }
 
+      setQrMemberContext({
+        studentId: studentNumber,
+        organizations,
+        currentOrganization,
+      });
+
       setTimeout(() => {
         qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }, 100);
-    } catch {
+    } catch (error) {
       setErrorModal({
         title: "Could not retrieve QR code",
-        description: "Could not reach the server. Please try again.",
+        description: requestErrorMessage(
+          error,
+          "Could not retrieve the QR code. Please try again.",
+        ),
       });
     } finally {
       setChecking(false);
@@ -93,6 +137,7 @@ export function RetrieveQrForm() {
 
   function handleClear() {
     clear();
+    setQrMemberContext(null);
     setFormKey((current) => current + 1);
   }
 
@@ -116,6 +161,7 @@ export function RetrieveQrForm() {
               <Input
                 autoComplete="off"
                 inputMode="numeric"
+                maxLength={MAX_STUDENT_NUMBER_LENGTH}
                 name="studentNumber"
                 placeholder="Example: 2024105858"
                 required
@@ -137,7 +183,16 @@ export function RetrieveQrForm() {
             </Button>
           </CardFooter>
         </Form>
-        {dataUrl ? <QrCodePreview dataUrl={dataUrl} ref={qrRef} /> : null}
+        {dataUrl && qrMemberContext ? (
+          <QrCodePreview
+            key={`${qrMemberContext.studentId}-${qrMemberContext.currentOrganization}`}
+            currentOrganization={qrMemberContext.currentOrganization}
+            dataUrl={dataUrl}
+            organizations={qrMemberContext.organizations}
+            ref={qrRef}
+            studentId={qrMemberContext.studentId}
+          />
+        ) : null}
       </Card>
 
       <Dialog

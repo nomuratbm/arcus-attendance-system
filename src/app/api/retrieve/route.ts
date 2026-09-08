@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMember } from "@/lib/dynamodb/members";
+import {
+  getMember,
+  getMemberOrganizations,
+} from "@/lib/dynamodb/members";
+import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +14,16 @@ export async function GET(request: NextRequest) {
     if (!studentId) {
       return NextResponse.json(
         { registered: false, error: "Missing student number" },
+        { status: 400 },
+      );
+    }
+
+    if (studentId.length > MAX_STUDENT_NUMBER_LENGTH) {
+      return NextResponse.json(
+        {
+          registered: false,
+          error: `Student number cannot exceed ${MAX_STUDENT_NUMBER_LENGTH} characters`,
+        },
         { status: 400 },
       );
     }
@@ -33,7 +47,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ registered: true }, { status: 200 });
+    const organizations = await getMemberOrganizations(studentId);
+
+    return NextResponse.json(
+      {
+        registered: true,
+        organization_ids: organizations.map(
+          (organization) => organization.value,
+        ),
+        organizations,
+        current_organization: member.current_organization,
+      },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Error in GET /api/retrieve:", error);
     return NextResponse.json(

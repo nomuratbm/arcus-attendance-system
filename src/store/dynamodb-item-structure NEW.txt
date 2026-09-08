@@ -13,7 +13,7 @@ course: string           // form field: programYear
 department: string
 current_organization: uuid | "" // empty means no organization represented
 
-Registration creates this item and its Organization Member items in one
+Registration creates the Member and Organization Member items in one
 transaction. ConditionExpression attribute_not_exists(PK) ensures that a
 student number can only be registered once.
 
@@ -52,8 +52,6 @@ Example item:
   "SK": "EVENT#550e8400-e29b-41d4-a716-446655440000",
   "GSI1PK": "EVENT",
   "GSI1SK": "1725264000000",
-  "GSI3PK": "ORGANIZATION",
-  "GSI3SK": "ORGANIZATION#d0f409ec-9be8-4387-b814-8a5eed2cac8a",
   "name": "AWS Arcus Kickoff",
   "description": "Opening ceremony and member check-in"
 }
@@ -65,25 +63,13 @@ Example item:
 PK: EVENT#(uuid)     // selected event PK
 SK: MEMBER#(student_id)
 member_organization: uuid | "" // representation captured at check-in
-scannedAt: string
-leftAt: string             // overwritten whenever the member scans out
+scannedAt: timestamp
+leftAt: timestamp //to be overwritten whenever a member scans out 
 timestamp: number
 
-Example item:
-
-{
-  "PK": "EVENT#550e8400-e29b-41d4-a716-446655440000",
-  "SK": "MEMBER#2024105858",
-  "member_organization": "d0f409ec-9be8-4387-b814-8a5eed2cac8a",
-  "scannedAt": "02:15:08 PM",
-  "leftAt": "05:30:00 PM",
-  "timestamp": 1725264908000
-}
-
 --------------------------------------------------------------------------------
-4. Organization
+4. Organizations
 --------------------------------------------------------------------------------
-
 PK: ORGANIZATION#(uuid)
 SK: ORGANIZATION#(uuid)
 GSI4PK: "ORGANIZATION"
@@ -99,9 +85,8 @@ create that index and backfill these attributes on existing organization
 records.
 
 --------------------------------------------------------------------------------
-5. Organization Member
+5. Organization Members
 --------------------------------------------------------------------------------
-
 PK: ORGANIZATION#(uuid)
 SK: MEMBER#(student_id)
 organization_id: uuid

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,57 +13,102 @@ import {
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectGroup,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
+import {
+  parseAttendanceEvent,
   type AttendanceEvent,
   useEventsStore,
 } from "@/store/useEventsStore";
+import { useOrganizationsStore } from "@/store/useOrganizationsStore";
 
 function eventFromResponse(value: unknown): AttendanceEvent | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-
-  const event = value as Record<string, unknown>;
-  if (
-    typeof event.PK !== "string" ||
-    typeof event.SK !== "string" ||
-    event.GSI1PK !== "EVENT" ||
-    typeof event.GSI1SK !== "string" ||
-    typeof event.name !== "string" ||
-    typeof event.description !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    PK: event.PK,
-    SK: event.SK,
-    GSI1PK: "EVENT",
-    GSI1SK: event.GSI1SK,
-    name: event.name,
-    description: event.description,
-  };
+  return parseAttendanceEvent(value);
 }
 
 export function AddEventForm() {
   const [formKey, setFormKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const addEvent = useEventsStore((state) => state.addEvent);
+  const selectedOrganizationId = useEventsStore(
+    (state) => state.selectedOrganizationId,
+  );
+  const setSelectedOrganizationId = useEventsStore(
+    (state) => state.setSelectedOrganizationId,
+  );
+  const organizations = useOrganizationsStore((state) => state.organizations);
+  const organizationsError = useOrganizationsStore(
+    (state) => state.organizationsError,
+  );
+  const organizationsLoading = useOrganizationsStore(
+    (state) => state.organizationsLoading,
+  );
+  const organizationsLoaded = useOrganizationsStore(
+    (state) => state.organizationsLoaded,
+  );
+  const loadOrganizations = useOrganizationsStore(
+    (state) => state.loadOrganizations,
+  );
+  const selectedOrganization =
+    organizations.find(
+      (organization) => organization.value === selectedOrganizationId,
+    ) ?? null;
+
+  useEffect(() => {
+    void loadOrganizations();
+  }, [loadOrganizations]);
+
+  useEffect(() => {
+    if (
+      organizationsLoaded &&
+      !organizationsLoading &&
+      !selectedOrganization
+    ) {
+      setSelectedOrganizationId(organizations[0]?.value ?? null);
+    }
+  }, [
+    organizations,
+    organizationsLoaded,
+    organizationsLoading,
+    selectedOrganization,
+    setSelectedOrganizationId,
+  ]);
 
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const name = String(formValues.name ?? "").trim();
     const description = String(formValues.description ?? "").trim();
+    const organization = selectedOrganizationId ?? "";
+
+    if (!organization) {
+      toastManager.add({
+        type: "error",
+        title: "Select an organization",
+        description: "Choose an organization before creating the event.",
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({ name, description, organization }),
       });
-      const data: unknown = await response.json();
+      const data = await readResponseJson(response);
       const event =
         typeof data === "object" && data !== null && "event" in data
           ? eventFromResponse(data.event)
@@ -78,24 +123,23 @@ export function AddEventForm() {
         });
         setFormKey((current) => current + 1);
       } else {
-        const error =
-          typeof data === "object" &&
-          data !== null &&
-          "error" in data &&
-          typeof data.error === "string"
-            ? data.error
-            : "An unexpected error occurred.";
         toastManager.add({
           type: "error",
           title: "Failed to create event",
-          description: error,
+          description: apiErrorMessage(
+            data,
+            "An unexpected error occurred. Please try again.",
+          ),
         });
       }
-    } catch {
+    } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Network error",
-        description: "Could not reach the server. Please try again.",
+        title: "Failed to create event",
+        description: requestErrorMessage(
+          error,
+          "Could not create the event. Please try again.",
+        ),
       });
     } finally {
       setSubmitting(false);
@@ -117,6 +161,56 @@ export function AddEventForm() {
           onFormSubmit={handleFormSubmit}
         >
           <CardPanel className="flex flex-col gap-4">
+            <Field className="w-full" name="organization">
+              <FieldLabel>Organization</FieldLabel>
+              <Select
+                disabled={organizationsLoading || Boolean(organizationsError)}
+                isItemEqualToValue={(item, value) =>
+                  item.value === value?.value
+                }
+                items={organizations}
+                onValueChange={(value) =>
+                  setSelectedOrganizationId(value?.value ?? null)
+                }
+                required
+                value={selectedOrganization}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an organization" />
+                </SelectTrigger>
+                <SelectPopup alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {organizations.map((organization) => (
+                      <SelectItem
+                        key={organization.value}
+                        value={organization}
+                      >
+                        {organization.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectPopup>
+              </Select>
+              {organizationsError ? (
+                <div
+                  className="flex flex-wrap items-center gap-2 text-destructive-foreground text-xs"
+                  role="alert"
+                >
+                  <span>{organizationsError}</span>
+                  <Button
+                    disabled={organizationsLoading}
+                    onClick={() => void loadOrganizations(true)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+              <FieldError>Please select an organization.</FieldError>
+            </Field>
+
             <Field className="w-full" name="name">
               <FieldLabel>Name</FieldLabel>
               <Input

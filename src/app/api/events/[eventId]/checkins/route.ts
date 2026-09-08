@@ -37,7 +37,8 @@ export async function GET(
       return NextResponse.json({ checkIns }, { status: 200 });
     }
 
-    const header = "SK,full_name,student_id,course,department,scannedAt,timestamp";
+    const header =
+      "SK,full_name,student_id,course,department,member_organization,scannedAt,leftAt,timestamp";
     const rows = checkIns.map((row) =>
       [
         csvEscape(row.SK),
@@ -45,7 +46,9 @@ export async function GET(
         csvEscape(row.student_id),
         csvEscape(row.course),
         csvEscape(row.department),
+        csvEscape(row.member_organization),
         csvEscape(row.scannedAt),
+        csvEscape(row.leftAt),
         csvEscape(String(row.timestamp || "")),
       ].join(","),
     );

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   mergeEventsByPk,
+  mergeEventsForOrganization,
   mergePersistedEventSelection,
   readPersistedSelectedEventPK,
   resolveSelectedEventPK,
@@ -10,6 +11,22 @@ import {
 const localEvent = { PK: "EVENT#new" };
 const existingEvent = { PK: "EVENT#old" };
 const updatedExisting = { PK: "EVENT#old", name: "from-server" };
+
+test("org merge keeps only local events for the selected organization", () => {
+  const orgA = "ORGANIZATION#org-a";
+  const orgB = "ORGANIZATION#org-b";
+  const localA = { PK: "EVENT#local-a", GSI3SK: orgA };
+  const localB = { PK: "EVENT#local-b", GSI3SK: orgB };
+  const incomingA = { PK: "EVENT#server-a", GSI3SK: orgA };
+
+  const merged = mergeEventsForOrganization(
+    [localA, localB],
+    [incomingA],
+    orgA,
+  );
+
+  assert.deepEqual(merged, [localA, incomingA]);
+});
 
 test("empty GET keeps locally added events", () => {
   const merged = mergeEventsByPk([localEvent], []);
@@ -64,5 +81,20 @@ test("persisted events arrays are ignored", () => {
       selectedEventPK: "EVENT#keep",
     }),
     "EVENT#keep",
+  );
+});
+
+test("persist merge prefers stored organization over the default", () => {
+  const current = {
+    selectedEventPK: null,
+    selectedOrganizationId: "default-org",
+  };
+
+  assert.equal(
+    mergePersistedEventSelection(
+      { selectedOrganizationId: "stored-org" },
+      current,
+    ).selectedOrganizationId,
+    "stored-org",
   );
 });

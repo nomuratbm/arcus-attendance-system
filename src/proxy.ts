@@ -24,6 +24,8 @@ export const config = {
     "/scanner/:path*",
     "/addevent",
     "/addevent/:path*",
+    "/organizations",
+    "/organizations/:path*",
     "/api/member",
     "/api/member/:path*",
     "/api/checkin",

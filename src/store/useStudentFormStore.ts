@@ -12,12 +12,14 @@ import type { Member } from "@/store/member-item";
  * student_id: string       // studentNumber
  * course: string           // programYear
  * department: string
+ * current_organization: string
  */
 export interface StudentFormData {
   studentName: string;
   studentNumber: string;
   programYear: string;
   department: string;
+  organizationIds: string[];
 }
 
 interface StudentFormState extends StudentFormData {
@@ -31,6 +33,7 @@ const emptyFormData: StudentFormData = {
   studentNumber: "",
   programYear: "",
   department: "",
+  organizationIds: [],
 };
 
 export const useStudentFormStore = create<StudentFormState>()(
@@ -53,6 +56,7 @@ export const useStudentFormStore = create<StudentFormState>()(
           student_id: studentId,
           course: state.programYear.trim(),
           department: state.department.trim(),
+          current_organization: state.organizationIds[0] ?? "",
         };
       },
     }),
@@ -64,6 +68,7 @@ export const useStudentFormStore = create<StudentFormState>()(
         studentNumber: state.studentNumber,
         programYear: state.programYear,
         department: state.department,
+        organizationIds: state.organizationIds,
       }),
     },
   ),

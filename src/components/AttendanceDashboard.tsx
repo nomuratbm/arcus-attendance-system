@@ -24,6 +24,11 @@ import {
   AlertDialogClose,
 } from "@/components/ui/alert-dialog";
 import { Trash2 } from "lucide-react";
+import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
 
 export function AttendanceDashboard() {
   const attendanceHistory = useAttendanceStore((state) => state.attendanceHistory);
@@ -74,7 +79,10 @@ export function AttendanceDashboard() {
         `/api/events/${encodeURIComponent(eventId)}/checkins`,
       );
       if (!response.ok) {
-        throw new Error("Failed to download attendance CSV.");
+        const data = await readResponseJson(response);
+        throw new Error(
+          apiErrorMessage(data, "Failed to download attendance CSV."),
+        );
       }
 
       const blob = await response.blob();
@@ -86,8 +94,13 @@ export function AttendanceDashboard() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-    } catch {
-      setExportError("Could not download attendance CSV.");
+    } catch (error) {
+      setExportError(
+        requestErrorMessage(
+          error,
+          "Could not download attendance CSV. Please try again.",
+        ),
+      );
     } finally {
       setIsExporting(false);
     }
@@ -266,14 +279,15 @@ export function AttendanceDashboard() {
                 <TableHead>Name</TableHead>
                 <TableHead>Student ID</TableHead>
                 <TableHead>Program</TableHead>
-                <TableHead className="text-right">Time</TableHead>
+                <TableHead className="text-right">Entered</TableHead>
+                <TableHead className="text-right">Left</TableHead>
                 <TableHead className="w-10 text-center">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredRecords.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {emptyMessage}
                   </TableCell>
                 </TableRow>
@@ -293,6 +307,9 @@ export function AttendanceDashboard() {
                       <TableCell className="text-muted-foreground">{course}</TableCell>
                       <TableCell className="text-right text-muted-foreground font-mono text-xs">
                         {item.scannedAt}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground font-mono text-xs">
+                        {item.leftAt || "—"}
                       </TableCell>
                       <TableCell className="text-center">
                         <Button

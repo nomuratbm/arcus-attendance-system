@@ -71,6 +71,10 @@ export function safeReturnPath(value: string | null | undefined): string {
     return value;
   }
 
+  if (value === "/organizations" || value.startsWith("/organizations/")) {
+    return value;
+  }
+
   return "/scanner";
 }
 

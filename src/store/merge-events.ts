@@ -2,6 +2,10 @@ export type EventWithPk = {
   PK: string;
 };
 
+export type EventWithOrganization = EventWithPk & {
+  GSI3SK?: string;
+};
+
 export function mergeEventsByPk<T extends EventWithPk>(
   current: T[],
   incoming: T[],
@@ -9,6 +13,18 @@ export function mergeEventsByPk<T extends EventWithPk>(
   const incomingPks = new Set(incoming.map((event) => event.PK));
   const localOnly = current.filter((event) => !incomingPks.has(event.PK));
   return [...localOnly, ...incoming];
+}
+
+export function mergeEventsForOrganization<T extends EventWithOrganization>(
+  current: T[],
+  incoming: T[],
+  organizationKey: string | null,
+): T[] {
+  const scopedCurrent = organizationKey
+    ? current.filter((event) => event.GSI3SK === organizationKey)
+    : current;
+
+  return mergeEventsByPk(scopedCurrent, incoming);
 }
 
 export function resolveSelectedEventPK<T extends EventWithPk>(
@@ -40,13 +56,35 @@ export function readPersistedSelectedEventPK(persisted: unknown): string | null 
     : null;
 }
 
-export function mergePersistedEventSelection<T extends { selectedEventPK: string | null }>(
+export function readPersistedSelectedOrganizationId(
   persisted: unknown,
-  current: T,
-): T {
+): string | null {
+  if (typeof persisted !== "object" || persisted === null) {
+    return null;
+  }
+
+  if (!("selectedOrganizationId" in persisted)) {
+    return null;
+  }
+
+  const selectedOrganizationId = persisted.selectedOrganizationId;
+  return typeof selectedOrganizationId === "string" && selectedOrganizationId
+    ? selectedOrganizationId
+    : null;
+}
+
+export function mergePersistedEventSelection<
+  T extends {
+    selectedEventPK: string | null;
+    selectedOrganizationId?: string | null;
+  },
+>(persisted: unknown, current: T): T {
   return {
     ...current,
     selectedEventPK:
       current.selectedEventPK ?? readPersistedSelectedEventPK(persisted),
+    selectedOrganizationId:
+      readPersistedSelectedOrganizationId(persisted) ??
+      current.selectedOrganizationId,
   };
 }

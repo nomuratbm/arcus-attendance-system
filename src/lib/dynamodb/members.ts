@@ -1,12 +1,26 @@
-import { BatchGetCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  BatchGetCommand,
+  GetCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
 import {
+  getOrganization,
+  listOrganizations,
+} from "@/lib/dynamodb/organizations";
+import type { OrganizationOption } from "@/lib/organizations";
+import {
   memberItemKey,
+  organizationIdFromKey,
+  organizationItemKey,
   studentIdFromMemberKey,
 } from "@/store/dynamodb-keys";
 import { type Member } from "@/store/member-item";
 
 export type { Member };
+
+export const MAX_MEMBER_ORGANIZATIONS = 99;
 
 export type MemberDetails = Omit<Member, "PK" | "SK">;
 
@@ -16,27 +30,60 @@ export type CreateMemberResult =
 
 export async function createMember(
   details: MemberDetails,
+  organizationIds: string[],
 ): Promise<CreateMemberResult> {
   const studentId = details.student_id.trim();
   const key = memberItemKey(studentId);
+  const uniqueOrganizationIds = Array.from(
+    new Set(organizationIds.map((value) => value.trim()).filter(Boolean)),
+  );
+
+  if (uniqueOrganizationIds.length > MAX_MEMBER_ORGANIZATIONS) {
+    throw new Error(
+      `A member cannot select more than ${MAX_MEMBER_ORGANIZATIONS} organizations`,
+    );
+  }
 
   try {
     await dynamodb.send(
-      new PutCommand({
-        TableName: tableName(),
-        Item: {
-          PK: key,
-          SK: key,
-          ...details,
-          student_id: studentId,
-        },
-        ConditionExpression: "attribute_not_exists(PK)",
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: tableName(),
+              Item: {
+                PK: key,
+                SK: key,
+                ...details,
+                student_id: studentId,
+                current_organization: uniqueOrganizationIds[0] ?? "",
+              },
+              ConditionExpression: "attribute_not_exists(PK)",
+            },
+          },
+          ...uniqueOrganizationIds.map((organizationId) => ({
+            Put: {
+              TableName: tableName(),
+              Item: {
+                PK: organizationItemKey(organizationId),
+                SK: key,
+                organization_id: organizationId,
+                student_id: studentId,
+              },
+              ConditionExpression:
+                "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+            },
+          })),
+        ],
       }),
     );
 
     return { status: "created" };
   } catch (error: unknown) {
-    if (isConditionalCheckFailed(error)) {
+    if (
+      isConditionalCheckFailed(error) ||
+      (isTransactionCanceled(error) && (await getMember(studentId)) !== null)
+    ) {
       return { status: "already-exists" };
     }
 
@@ -61,6 +108,167 @@ export async function getMember(studentId: string): Promise<Member | null> {
   }
 
   return null;
+}
+
+export async function getMemberOrganizationIds(
+  studentId: string,
+): Promise<string[]> {
+  return (await getMemberOrganizations(studentId)).map(
+    (organization) => organization.value,
+  );
+}
+
+export async function getMemberOrganizations(
+  studentId: string,
+): Promise<OrganizationOption[]> {
+  const memberKey = memberItemKey(studentId);
+  const name = tableName();
+  const found = new Set<string>();
+  const organizations = await listOrganizations();
+  for (let offset = 0; offset < organizations.length; offset += 100) {
+    let keysToFetch = organizations
+      .slice(offset, offset + 100)
+      .map((organization) => ({
+        PK: organizationItemKey(organization.value),
+        SK: memberKey,
+      }));
+
+    while (keysToFetch.length > 0) {
+      const result = await dynamodb.send(
+        new BatchGetCommand({
+          RequestItems: {
+            [name]: {
+              Keys: keysToFetch,
+              ProjectionExpression: "PK, SK",
+            },
+          },
+        }),
+      );
+
+      for (const item of result.Responses?.[name] ?? []) {
+        if (typeof item.PK === "string") {
+          found.add(organizationIdFromKey(item.PK));
+        }
+      }
+
+      keysToFetch = (result.UnprocessedKeys?.[name]?.Keys ?? []) as {
+        PK: string;
+        SK: string;
+      }[];
+    }
+  }
+
+  return organizations.filter((organization) =>
+    found.has(organization.value),
+  );
+}
+
+export async function isMemberOfOrganization(
+  studentId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const result = await dynamodb.send(
+    new GetCommand({
+      TableName: tableName(),
+      Key: {
+        PK: organizationItemKey(organizationId),
+        SK: memberItemKey(studentId),
+      },
+      ProjectionExpression: "PK, SK",
+    }),
+  );
+  return Boolean(result.Item);
+}
+
+export type UpdateCurrentOrganizationResult =
+  | { status: "updated" }
+  | { status: "member-not-found" }
+  | { status: "not-member" };
+
+export async function updateMemberCurrentOrganization(
+  studentId: string,
+  organizationId: string,
+): Promise<UpdateCurrentOrganizationResult> {
+  const member = await getMember(studentId);
+  if (!member) {
+    return { status: "member-not-found" };
+  }
+
+  if (!organizationId) {
+    try {
+      await dynamodb.send(
+        new UpdateCommand({
+          TableName: tableName(),
+          Key: {
+            PK: memberItemKey(studentId),
+            SK: memberItemKey(studentId),
+          },
+          UpdateExpression: "SET current_organization = :organization",
+          ExpressionAttributeValues: {
+            ":organization": "",
+          },
+          ConditionExpression:
+            "attribute_exists(PK) AND attribute_exists(SK)",
+        }),
+      );
+      return { status: "updated" };
+    } catch (error: unknown) {
+      if (isConditionalCheckFailed(error)) {
+        return { status: "member-not-found" };
+      }
+      throw error;
+    }
+  }
+
+  const [organization, hasMembership] = await Promise.all([
+    getOrganization(organizationId),
+    isMemberOfOrganization(studentId, organizationId),
+  ]);
+  if (!organization || !hasMembership) {
+    return { status: "not-member" };
+  }
+
+  try {
+    await dynamodb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: tableName(),
+              Key: {
+                PK: organizationItemKey(organizationId),
+                SK: memberItemKey(studentId),
+              },
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_exists(SK)",
+            },
+          },
+          {
+            Update: {
+              TableName: tableName(),
+              Key: {
+                PK: memberItemKey(studentId),
+                SK: memberItemKey(studentId),
+              },
+              UpdateExpression: "SET current_organization = :organization",
+              ExpressionAttributeValues: {
+                ":organization": organizationId,
+              },
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_exists(SK)",
+            },
+          },
+        ],
+      }),
+    );
+
+    return { status: "updated" };
+  } catch (error: unknown) {
+    if (isTransactionCanceled(error)) {
+      return { status: "not-member" };
+    }
+    throw error;
+  }
 }
 
 export async function getMembers(
@@ -151,6 +359,10 @@ function memberFromRecord(item: Record<string, unknown>): Member | null {
     student_id: studentId,
     course: typeof item.course === "string" ? item.course : "",
     department: typeof item.department === "string" ? item.department : "",
+    current_organization:
+      typeof item.current_organization === "string"
+        ? item.current_organization
+        : "",
   };
 }
 
@@ -160,5 +372,14 @@ function isConditionalCheckFailed(error: unknown): boolean {
     error !== null &&
     "name" in error &&
     (error as { name: string }).name === "ConditionalCheckFailedException"
+  );
+}
+
+function isTransactionCanceled(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "TransactionCanceledException"
   );
 }

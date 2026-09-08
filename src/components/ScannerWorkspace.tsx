@@ -4,6 +4,11 @@ import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { EventSelector } from "@/components/EventSelector";
 import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
+import {
   parseAttendanceRecord,
   useAttendanceStore,
   type AttendanceRecord,
@@ -80,30 +85,35 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
 
 export function ScannerWorkspace() {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
+  const selectedOrganizationId = useEventsStore(
+    (state) => state.selectedOrganizationId,
+  );
 
   useEffect(() => {
     const { setEvents, setEventsError, setEventsLoading } =
       useEventsStore.getState();
     const controller = new AbortController();
 
+    if (!selectedOrganizationId) {
+      setEventsError(null);
+      setEventsLoading(false);
+      return;
+    }
+
     setEventsLoading(true);
     setEventsError(null);
 
-    void fetch("/api/events", {
-      cache: "no-store",
-      signal: controller.signal,
-    })
+    void fetch(
+      `/api/events?organization=${encodeURIComponent(selectedOrganizationId)}`,
+      {
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    )
       .then(async (response) => {
-        const data: unknown = await response.json().catch(() => null);
+        const data = await readResponseJson(response);
         if (!response.ok) {
-          const error =
-            typeof data === "object" &&
-            data !== null &&
-            "error" in data &&
-            typeof data.error === "string"
-              ? data.error
-              : "Failed to load events.";
-          throw new Error(error);
+          throw new Error(apiErrorMessage(data, "Failed to load events."));
         }
 
         const events = eventsFromResponse(data);
@@ -119,7 +129,10 @@ export function ScannerWorkspace() {
         }
 
         setEventsError(
-          error instanceof Error ? error.message : "Failed to load events.",
+          requestErrorMessage(
+            error,
+            "Failed to load events. Please try again.",
+          ),
         );
       })
       .finally(() => {
@@ -131,7 +144,7 @@ export function ScannerWorkspace() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [selectedOrganizationId]);
 
   useEffect(() => {
     const {
@@ -164,9 +177,11 @@ export function ScannerWorkspace() {
       { signal: controller.signal },
     )
       .then(async (response) => {
-        const data: unknown = await response.json().catch(() => null);
+        const data = await readResponseJson(response);
         if (!response.ok) {
-          throw new Error("Failed to load attendance.");
+          throw new Error(
+            apiErrorMessage(data, "Failed to load attendance."),
+          );
         }
 
         const records = attendanceFromResponse(selectedEventPK, data);
@@ -182,6 +197,13 @@ export function ScannerWorkspace() {
         }
 
         console.error("Failed to load attendance:", error);
+        setAlert(
+          "error",
+          requestErrorMessage(
+            error,
+            "Failed to load attendance. Please try again.",
+          ),
+        );
         setAttendanceLoading(false);
       });
 

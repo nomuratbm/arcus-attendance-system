@@ -10,6 +10,11 @@ import {
 import { useEventsStore } from "@/store/useEventsStore";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
 
 export function QRScanner() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -20,7 +25,7 @@ export function QRScanner() {
   const isProcessingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const { setCurrentMember, addAttendanceRecord, setScanStatus, setAlert } = useAttendanceStore();
+  const { setCurrentMember, addAttendanceRecord, updateLeftAt, setScanStatus, setAlert } = useAttendanceStore();
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const canScan = Boolean(selectedEventPK);
 
@@ -57,26 +62,94 @@ export function QRScanner() {
         const response = await fetch(
           `/api/member?student_id=${encodeURIComponent(trimmedStudentId)}`,
         );
-        const data = await response.json();
+        const data = await readResponseJson(response);
+        const dataRecord =
+          typeof data === "object" && data !== null ? data : null;
 
         if (
           response.ok &&
-          data.valid &&
-          data.member &&
-          typeof data.member === "object"
+          dataRecord &&
+          "valid" in dataRecord &&
+          dataRecord.valid === true &&
+          "member" in dataRecord &&
+          dataRecord.member &&
+          typeof dataRecord.member === "object"
         ) {
           const member = memberFromDynamoItem(
-            data.member as Record<string, unknown>,
+            dataRecord.member as Record<string, unknown>,
             trimmedStudentId,
           );
           setCurrentMember(member);
 
+          const scanMode = useAttendanceStore.getState().scanTimestampMode;
           const memberSK = member.SK || member.PK;
-          const alreadyCheckedIn = useAttendanceStore
+          const existingRecord = useAttendanceStore
             .getState()
-            .attendanceHistory.some((item) => item.SK === memberSK);
+            .attendanceHistory.find((item) => item.SK === memberSK);
 
-          if (alreadyCheckedIn) {
+          if (scanMode === "leftAt") {
+            if (!existingRecord) {
+              setScanStatus("error");
+              setAlert(
+                "error",
+                `${member.full_name || "Member"} is not checked in to this event`,
+              );
+              return;
+            }
+
+            const record = updateLeftAt(member);
+            if (!record) {
+              setScanStatus("error");
+              setAlert("error", "Select an event before scanning");
+              return;
+            }
+
+            setScanStatus("success");
+            setAlert(
+              "success",
+              `Left at ${record.leftAt}: ${member.full_name || "Member Found"}`,
+            );
+            const rawEventId = record.PK.replace(/^EVENT#/, "");
+            const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
+            void fetch("/api/checkin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                eventId: rawEventId,
+                student_id: rawStudentId,
+                mode: "leave",
+                leftAt: record.leftAt,
+              }),
+            })
+              .then(async (leaveResponse) => {
+                if (leaveResponse.ok) {
+                  return;
+                }
+                const leaveData = await readResponseJson(leaveResponse);
+                setScanStatus("error");
+                setAlert(
+                  "error",
+                  apiErrorMessage(
+                    leaveData,
+                    "Could not save the leave time. Please scan again.",
+                  ),
+                );
+              })
+              .catch((error: unknown) => {
+                console.error("Leave persist error:", error);
+                setScanStatus("error");
+                setAlert(
+                  "error",
+                  requestErrorMessage(
+                    error,
+                    "Could not save the leave time. Please scan again.",
+                  ),
+                );
+              });
+            return;
+          }
+
+          if (existingRecord) {
             setScanStatus("success");
             setAlert(
               "info",
@@ -111,25 +184,47 @@ export function QRScanner() {
                 if (checkInResponse.ok || checkInResponse.status === 409) {
                   return;
                 }
-                console.error(
-                  "Check-in persist error:",
-                  await checkInResponse.text(),
+                const checkInData = await readResponseJson(checkInResponse);
+                setScanStatus("error");
+                setAlert(
+                  "error",
+                  apiErrorMessage(
+                    checkInData,
+                    "Could not save the check-in. Please scan again.",
+                  ),
                 );
               })
-              .catch((err) => {
-                console.error("Check-in persist error:", err);
+              .catch((error: unknown) => {
+                console.error("Check-in persist error:", error);
+                setScanStatus("error");
+                setAlert(
+                  "error",
+                  requestErrorMessage(
+                    error,
+                    "Could not save the check-in. Please scan again.",
+                  ),
+                );
               });
           }
         } else {
           setCurrentMember(null);
           setScanStatus("error");
-          setAlert("error", data.error || "Student not found in registry");
+          setAlert(
+            "error",
+            apiErrorMessage(data, "Student not found in registry"),
+          );
         }
       } catch (error) {
         console.error("Scan API Request Error:", error);
         setCurrentMember(null);
         setScanStatus("error");
-        setAlert("error", "Network error connecting to database");
+        setAlert(
+          "error",
+          requestErrorMessage(
+            error,
+            "Could not look up the student. Please try again.",
+          ),
+        );
       } finally {
         setLoading(false);
         // keep frame frozen briefly to view result, then resume live scanning
@@ -146,7 +241,7 @@ export function QRScanner() {
         }, 1500);
       }
     },
-    [setCurrentMember, addAttendanceRecord, setScanStatus, setAlert]
+    [setCurrentMember, addAttendanceRecord, updateLeftAt, setScanStatus, setAlert]
   );
 
   const startCamera = async () => {

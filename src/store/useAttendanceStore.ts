@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { formatAttendanceClockTime } from "@/lib/scan-time";
 import { memberItemKey, studentIdFromMemberKey } from "@/store/dynamodb-keys";
 import { type Member } from "@/store/member-item";
 import { useEventsStore } from "@/store/useEventsStore";
@@ -12,23 +13,30 @@ import { useEventsStore } from "@/store/useEventsStore";
  * student_id: string
  * course: string
  * department: string
+ * current_organization: uuid
  *
  * DynamoDB Attendance item (intended write from scan history)
  *
  * PK: EVENT#(uuid)
- * SK: MEMBER#(student_id)
- * scannedAt: string
+ * SK: MEMBER#(uuid)
+ * member_organization: uuid
+ * scannedAt: timestamp
+ * leftAt: timestamp
  * timestamp: number
  */
 
 export type { Member } from "@/store/member-item";
+
+export type ScanTimestampMode = "enteredAt" | "leftAt";
 
 export interface AttendanceRecord {
   id: string;
   PK: string;
   SK: string;
   member: Member;
+  member_organization: string;
   scannedAt: string;
+  leftAt: string;
   timestamp: number;
 }
 
@@ -36,15 +44,18 @@ interface AttendanceState {
   currentMember: Member | null;
   attendanceHistory: AttendanceRecord[];
   attendanceLoading: boolean;
+  scanTimestampMode: ScanTimestampMode;
   scanStatus: "idle" | "loading" | "success" | "error";
   alertMessage: { type: "success" | "error" | "info"; message: string } | null;
 
   setCurrentMember: (member: Member | null) => void;
   addAttendanceRecord: (member: Member) => AttendanceRecord | null;
+  updateLeftAt: (member: Member) => AttendanceRecord | null;
   removeAttendanceRecord: (id: string) => void;
   setAttendanceHistory: (records: AttendanceRecord[]) => void;
   replaceAttendanceForEvent: (eventPK: string, records: AttendanceRecord[]) => void;
   setAttendanceLoading: (loading: boolean) => void;
+  setScanTimestampMode: (mode: ScanTimestampMode) => void;
   setScanStatus: (status: "idle" | "loading" | "success" | "error") => void;
   setAlert: (type: "success" | "error" | "info" | null, message?: string | null) => void;
   clearHistory: () => void;
@@ -73,6 +84,10 @@ export function memberFromDynamoItem(
         : studentIdFromMemberKey(key),
     course: typeof item.course === "string" ? item.course : "",
     department: typeof item.department === "string" ? item.department : "",
+    current_organization:
+      typeof item.current_organization === "string"
+        ? item.current_organization
+        : "",
   };
 }
 
@@ -96,6 +111,10 @@ export function parseAttendanceRecord(
       : typeof raw.timestamp === "string"
         ? Number(raw.timestamp)
         : 0;
+  const studentId =
+    typeof raw.student_id === "string" && raw.student_id
+      ? raw.student_id
+      : studentIdFromMemberKey(sk);
 
   return {
     id: `${pk}#${sk}`,
@@ -105,14 +124,20 @@ export function parseAttendanceRecord(
       PK: sk,
       SK: sk,
       full_name: typeof raw.full_name === "string" ? raw.full_name : "",
-      student_id:
-        typeof raw.student_id === "string" && raw.student_id
-          ? raw.student_id
-          : studentIdFromMemberKey(sk),
+      student_id: studentId,
       course: typeof raw.course === "string" ? raw.course : "",
       department: typeof raw.department === "string" ? raw.department : "",
+      current_organization:
+        typeof raw.current_organization === "string"
+          ? raw.current_organization
+          : "",
     },
+    member_organization:
+      typeof raw.member_organization === "string"
+        ? raw.member_organization
+        : "",
     scannedAt: typeof raw.scannedAt === "string" ? raw.scannedAt : "",
+    leftAt: typeof raw.leftAt === "string" ? raw.leftAt : "",
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
   };
 }
@@ -121,12 +146,46 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   currentMember: null,
   attendanceHistory: [],
   attendanceLoading: false,
+  scanTimestampMode: "enteredAt",
   scanStatus: "idle",
   alertMessage: null,
 
   setCurrentMember: (member) => set({ currentMember: member }),
 
   addAttendanceRecord: (member) => {
+    const { selectedEventPK } = useEventsStore.getState();
+    if (!selectedEventPK) {
+      return null;
+    }
+
+    const memberSK = member.SK || member.PK;
+    const existing = get().attendanceHistory.find(
+      (record) => record.PK === selectedEventPK && record.SK === memberSK,
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date();
+    const record: AttendanceRecord = {
+      id: `${selectedEventPK}#${memberSK}`,
+      PK: selectedEventPK,
+      SK: memberSK,
+      member,
+      member_organization: member.current_organization,
+      scannedAt: formatAttendanceClockTime(now),
+      leftAt: "",
+      timestamp: now.getTime(),
+    };
+
+    set({
+      attendanceHistory: [record, ...get().attendanceHistory],
+    });
+
+    return record;
+  },
+
+  updateLeftAt: (member) => {
     const eventPK = useEventsStore.getState().selectedEventPK;
     if (!eventPK) {
       return null;
@@ -136,26 +195,20 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     const existing = get().attendanceHistory.find(
       (record) => record.PK === eventPK && record.SK === memberSK,
     );
-    if (existing) {
-      return existing;
+    if (!existing) {
+      return null;
     }
 
-    const now = new Date();
     const record: AttendanceRecord = {
-      id: `${eventPK}#${memberSK}`,
-      PK: eventPK,
-      SK: memberSK,
-      member,
-      scannedAt: now.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-      timestamp: now.getTime(),
+      ...existing,
+      member: member.full_name ? member : existing.member,
+      leftAt: formatAttendanceClockTime(),
     };
 
     set({
-      attendanceHistory: [record, ...get().attendanceHistory],
+      attendanceHistory: get().attendanceHistory.map((item) =>
+        item.id === record.id ? record : item,
+      ),
     });
 
     return record;
@@ -188,6 +241,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     }),
 
   setAttendanceLoading: (attendanceLoading) => set({ attendanceLoading }),
+
+  setScanTimestampMode: (scanTimestampMode) => set({ scanTimestampMode }),
 
   setScanStatus: (status) => set({ scanStatus: status }),
 

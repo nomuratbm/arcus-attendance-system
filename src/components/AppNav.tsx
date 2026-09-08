@@ -17,6 +17,7 @@ const publicNavItems = [
 const adminNavItems = [
   { href: "/scanner", label: "Scanner" },
   { href: "/addevent", label: "Add Event" },
+  { href: "/organizations", label: "Organizations" },
 ] as const;
 
 const navItemClassName = segmentedControlItemVariants({

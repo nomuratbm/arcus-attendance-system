@@ -1,6 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +32,23 @@ import {
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import { useQrCode } from "@/hooks/use-qr-code";
 import { departmentCampuses, departmentItems } from "@/lib/departments";
+import {
+  parseOrganizationOptions,
+  type OrganizationOption,
+} from "@/lib/organizations";
+import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
+import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
+
+type QrMemberContext = {
+  studentId: string;
+  organizations: OrganizationOption[];
+  currentOrganization: string;
+};
 
 const departmentSelectGroups = departmentCampuses.map((group, index) => (
   <Fragment key={group.campus}>
@@ -89,22 +110,25 @@ function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
 
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
-  const [sessionReady, setSessionReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [qrMemberContext, setQrMemberContext] =
+    useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const { dataUrl, generate, clear } = useQrCode();
-
-  useEffect(() => {
-    setSessionReady(true);
-  }, []);
-
-  const draft = useMemo(
-    () =>
-      sessionReady
-        ? useStudentFormStore.getState()
-        : { studentName: "", studentNumber: "", programYear: "", department: "" },
-    [sessionReady, formKey],
+  const sessionReady = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
   );
+  const draft = sessionReady
+    ? useStudentFormStore.getState()
+    : {
+        studentName: "",
+        studentNumber: "",
+        programYear: "",
+        department: "",
+        organizationIds: [],
+      };
 
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const studentName = String(formValues.studentName ?? "").trim();
@@ -118,7 +142,8 @@ export function StudentDetailsForm() {
       programYear,
       department,
     });
-    const memberItem = useStudentFormStore.getState().buildMemberItem();
+    const formState = useStudentFormStore.getState();
+    const memberItem = formState.buildMemberItem();
 
     setSubmitting(true);
     try {
@@ -130,12 +155,26 @@ export function StudentDetailsForm() {
           student_id: memberItem.student_id,
           course: memberItem.course,
           department: memberItem.department,
+          organization_ids: formState.organizationIds,
         }),
       });
 
-      const data = await response.json();
+      const data = await readResponseJson(response);
 
       if (response.ok) {
+        const selectedOrganizations = parseOrganizationOptions(data);
+        const currentOrganization =
+          typeof data === "object" &&
+          data !== null &&
+          "current_organization" in data &&
+          typeof data.current_organization === "string"
+            ? data.current_organization
+            : (formState.organizationIds[0] ?? "");
+        setQrMemberContext({
+          studentId: memberItem.student_id,
+          organizations: selectedOrganizations,
+          currentOrganization,
+        });
         await generate(memberItem.student_id);
         toastManager.add({
           type: "success",
@@ -156,14 +195,20 @@ export function StudentDetailsForm() {
         toastManager.add({
           type: "error",
           title: "Registration failed",
-          description: data.error ?? "An unexpected error occurred.",
+          description: apiErrorMessage(
+            data,
+            "An unexpected error occurred. Please try again.",
+          ),
         });
       }
-    } catch {
+    } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Network error",
-        description: "Could not reach the server. Please try again.",
+        title: "Registration failed",
+        description: requestErrorMessage(
+          error,
+          "Could not register the student. Please try again.",
+        ),
       });
     } finally {
       setSubmitting(false);
@@ -173,6 +218,7 @@ export function StudentDetailsForm() {
   function handleClear() {
     useStudentFormStore.getState().clearFormData();
     clear();
+    setQrMemberContext(null);
     setFormKey((current) => current + 1);
   }
 
@@ -206,7 +252,7 @@ export function StudentDetailsForm() {
                 required
                 type="text"
               />
-              <FieldError>Please enter the student's full name.</FieldError>
+              <FieldError>Please enter the student&apos;s full name.</FieldError>
             </Field>
 
             <Field className="w-full" name="studentNumber">
@@ -215,6 +261,7 @@ export function StudentDetailsForm() {
                 autoComplete="off"
                 defaultValue={draft.studentNumber}
                 inputMode="numeric"
+                maxLength={MAX_STUDENT_NUMBER_LENGTH}
                 name="studentNumber"
                 onChange={(event) => {
                   useStudentFormStore.getState().setFormData({
@@ -261,7 +308,16 @@ export function StudentDetailsForm() {
             </Button>
           </CardFooter>
         </Form>
-        {dataUrl ? <QrCodePreview dataUrl={dataUrl} ref={qrRef} /> : null}
+        {dataUrl && qrMemberContext ? (
+          <QrCodePreview
+            key={`${qrMemberContext.studentId}-${qrMemberContext.currentOrganization}`}
+            currentOrganization={qrMemberContext.currentOrganization}
+            dataUrl={dataUrl}
+            organizations={qrMemberContext.organizations}
+            ref={qrRef}
+            studentId={qrMemberContext.studentId}
+          />
+        ) : null}
       </Card>
     </ToastProvider>
   );
