@@ -9,6 +9,12 @@ export const noOrganizationOption: OrganizationOption = {
   value: NO_ORGANIZATION_VALUE,
 };
 
+export const ADD_ORGANIZATIONS_VALUE = "__add__";
+export const addOrganizationsOption: OrganizationOption = {
+  label: "Add organizations",
+  value: ADD_ORGANIZATIONS_VALUE,
+};
+
 export function isOrganizationOption(
   value: unknown,
 ): value is OrganizationOption {

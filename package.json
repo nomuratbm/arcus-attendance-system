@@ -1,6 +1,6 @@
 {
-  "name": "scan-to-pdf",
-  "version": "0.1.0",
+  "name": "arcus-attendance-system",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

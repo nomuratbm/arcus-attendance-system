@@ -182,6 +182,7 @@ export function RetrieveQrForm() {
         {dataUrl && qrMemberContext ? (
           <QrCodePreview
             key={qrMemberContext.studentId}
+            allowAddOrganizations
             dataUrl={dataUrl}
             organizations={qrMemberContext.organizations}
             ref={qrRef}

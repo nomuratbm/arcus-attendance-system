@@ -7,6 +7,7 @@ import {
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
 import {
   getOrganization,
+  getOrganizations,
   listOrganizations,
 } from "@/lib/dynamodb/organizations";
 import type { OrganizationOption } from "@/lib/organizations";
@@ -178,6 +179,83 @@ export async function isMemberOfOrganization(
     }),
   );
   return Boolean(result.Item);
+}
+
+export type AddMemberOrganizationsResult =
+  | { status: "added"; organizations: OrganizationOption[] }
+  | { status: "member-not-found" }
+  | { status: "invalid-organizations" }
+  | { status: "limit-exceeded" };
+
+export async function addMemberOrganizations(
+  studentId: string,
+  organizationIds: string[],
+): Promise<AddMemberOrganizationsResult> {
+  const member = await getMember(studentId);
+  if (!member) {
+    return { status: "member-not-found" };
+  }
+
+  const requestedIds = Array.from(
+    new Set(organizationIds.map((value) => value.trim()).filter(Boolean)),
+  );
+  if (requestedIds.length === 0) {
+    return { status: "invalid-organizations" };
+  }
+
+  const selectedOrganizations = await getOrganizations(requestedIds);
+  if (selectedOrganizations.length !== requestedIds.length) {
+    return { status: "invalid-organizations" };
+  }
+
+  const existing = await getMemberOrganizations(studentId);
+  const existingIds = new Set(existing.map((organization) => organization.value));
+  const toAdd = selectedOrganizations.filter(
+    (organization) => !existingIds.has(organization.value),
+  );
+
+  if (existing.length + toAdd.length > MAX_MEMBER_ORGANIZATIONS) {
+    return { status: "limit-exceeded" };
+  }
+
+  if (toAdd.length === 0) {
+    return { status: "added", organizations: existing };
+  }
+
+  const memberKey = memberItemKey(studentId);
+
+  try {
+    await dynamodb.send(
+      new TransactWriteCommand({
+        TransactItems: toAdd.map((organization) => ({
+          Put: {
+            TableName: tableName(),
+            Item: {
+              PK: organizationItemKey(organization.value),
+              SK: memberKey,
+              organization_id: organization.value,
+              student_id: studentId.trim(),
+            },
+            ConditionExpression:
+              "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+          },
+        })),
+      }),
+    );
+  } catch (error: unknown) {
+    if (isTransactionCanceled(error)) {
+      return {
+        status: "added",
+        organizations: await getMemberOrganizations(studentId),
+      };
+    }
+    throw error;
+  }
+
+  return {
+    status: "added",
+    organizations: [...existing, ...toAdd],
+  };
 }
 
 export type UpdateCurrentOrganizationResult =
