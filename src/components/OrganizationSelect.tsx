@@ -4,28 +4,23 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
-  Combobox,
-  ComboboxChip,
-  ComboboxChips,
-  ComboboxChipsInput,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxPopup,
-  ComboboxValue,
-} from "@/components/ui/combobox";
-import {
-  NO_ORGANIZATION_VALUE,
-  noOrganizationOption,
-} from "@/lib/organizations";
+  Select,
+  SelectGroup,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { noOrganizationOption } from "@/lib/organizations";
 import { useOrganizationsStore } from "@/store/useOrganizationsStore";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
 
 export function OrganizationSelect() {
-  const selectedIds = useStudentFormStore((state) => state.organizationIds);
-  const noOrganizationSelected = useStudentFormStore(
-    (state) => state.noOrganizationSelected,
+  const organizationSelection = useStudentFormStore(
+    (state) => state.organizationSelection,
   );
+  const submitting = useStudentFormStore((state) => state.submitting);
   const setFormData = useStudentFormStore((state) => state.setFormData);
   const organizations = useOrganizationsStore((state) => state.organizations);
   const organizationsError = useOrganizationsStore(
@@ -40,105 +35,73 @@ export function OrganizationSelect() {
   const loadOrganizations = useOrganizationsStore(
     (state) => state.loadOrganizations,
   );
-  const selectedOrganizations = organizations.filter((organization) =>
-    selectedIds.includes(organization.value),
-  );
   const availableOrganizations = [noOrganizationOption, ...organizations];
-  const selectedOptions =
-    selectedOrganizations.length > 0
-      ? selectedOrganizations
-      : noOrganizationSelected
-        ? [noOrganizationOption]
-        : [];
+  const selectedOrganization =
+    availableOrganizations.find(
+      (organization) => organization.value === organizationSelection,
+    ) ?? null;
 
   useEffect(() => {
     void loadOrganizations();
   }, [loadOrganizations]);
 
   useEffect(() => {
-    if (!organizationsLoaded) {
-      return;
+    if (
+      organizationsLoaded &&
+      organizationSelection &&
+      organizationSelection !== noOrganizationOption.value &&
+      !organizations.some(
+        (organization) => organization.value === organizationSelection,
+      )
+    ) {
+      setFormData({ organizationSelection: "" });
     }
-    const validIds = selectedIds.filter((organizationId) =>
-      organizations.some(
-        (organization) => organization.value === organizationId,
-      ),
-    );
-    if (validIds.length !== selectedIds.length) {
-      setFormData({ organizationIds: validIds });
-    }
-  }, [organizations, organizationsLoaded, selectedIds, setFormData]);
+  }, [
+    organizationSelection,
+    organizations,
+    organizationsLoaded,
+    setFormData,
+  ]);
 
   return (
     <Field className="w-full">
-      <FieldLabel>Organizations</FieldLabel>
-      <Combobox
-        disabled={organizationsLoading}
-        isItemEqualToValue={(item, value) => item.value === value.value}
-        itemToStringValue={(organization) => organization.label}
-        items={availableOrganizations}
-        multiple
-        onValueChange={(value) => {
-          const values = value.map((organization) => organization.value);
-          const selectedNoOrganization = values.includes(
-            NO_ORGANIZATION_VALUE,
-          );
-          const organizationIds = values.filter(
-            (organizationId) =>
-              organizationId !== NO_ORGANIZATION_VALUE,
-          );
-
-          setFormData({
-            organizationIds:
-              selectedNoOrganization && selectedIds.length > 0
-                ? []
-                : organizationIds,
-            noOrganizationSelected:
-              selectedNoOrganization && selectedIds.length > 0
-                ? true
-                : organizationIds.length > 0
-                  ? false
-                  : selectedNoOrganization,
-          });
-        }}
-        value={selectedOptions}
-      >
-        <ComboboxChips>
-          <ComboboxValue>
-            {selectedOptions.map((organization) => (
-              <ComboboxChip key={organization.value}>
-                {organization.label}
-              </ComboboxChip>
-            ))}
-          </ComboboxValue>
-          <ComboboxChipsInput
-            placeholder={
-              organizationsLoading
-                ? "Loading organizations..."
-                : "Add an organization"
-            }
-          />
-        </ComboboxChips>
-        <ComboboxPopup>
-          <ComboboxEmpty>No organizations found.</ComboboxEmpty>
-          <ComboboxList>
-            {(organization) => (
-              <ComboboxItem
-                key={organization.value}
-                value={organization}
-              >
-                {organization.label}
-              </ComboboxItem>
-            )}
-          </ComboboxList>
-        </ComboboxPopup>
-      </Combobox>
+      <FieldLabel>Organization</FieldLabel>
+      {organizationsLoading ? (
+        <Skeleton
+          aria-label="Loading organizations"
+          className="h-9 w-full"
+          role="status"
+        />
+      ) : (
+        <Select
+          disabled={submitting}
+          isItemEqualToValue={(item, value) => item.value === value?.value}
+          items={availableOrganizations}
+          onValueChange={(value) => {
+            setFormData({ organizationSelection: value?.value ?? "" });
+          }}
+          value={selectedOrganization}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select an organization" />
+          </SelectTrigger>
+          <SelectPopup alignItemWithTrigger={false}>
+            <SelectGroup>
+              {availableOrganizations.map((organization) => (
+                <SelectItem key={organization.value} value={organization}>
+                  {organization.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectPopup>
+        </Select>
+      )}
       <FieldDescription>
         {organizationsError ? (
           <span className="flex flex-wrap items-center gap-2" role="alert">
             <span>{organizationsError}</span>
             <Button
-              disabled={organizationsLoading}
+              disabled={organizationsLoading || submitting}
               onClick={() => void loadOrganizations(true)}
               size="sm"
               type="button"
@@ -148,7 +111,7 @@ export function OrganizationSelect() {
             </Button>
           </span>
         ) : (
-          "Select every organization you are a member of, or choose no organization."
+          "Choose the one organization you represent, or choose No organization."
         )}
       </FieldDescription>
     </Field>

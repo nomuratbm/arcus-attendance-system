@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/store/merge-events.test.ts src/lib/organization-csv.test.ts"
+    "test": "node --experimental-strip-types --test src/store/merge-events.test.ts src/lib/organization-csv.test.ts src/lib/member-registration.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1120.0",

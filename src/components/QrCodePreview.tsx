@@ -1,140 +1,35 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type Ref } from "react";
-import {
-  Select,
-  SelectGroup,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@/components/ui/field";
-import {
-  NO_ORGANIZATION_VALUE,
-  noOrganizationOption,
-  type OrganizationOption,
-} from "@/lib/organizations";
-import {
-  apiErrorMessage,
-  readResponseJson,
-  requestErrorMessage,
-} from "@/lib/request-errors";
+import type { Ref } from "react";
+import type { OrganizationOption } from "@/lib/organizations";
 
 type QrCodePreviewProps = {
   dataUrl: string;
   studentId: string;
-  organizations: OrganizationOption[];
+  organization: OrganizationOption | null;
   ref?: Ref<HTMLDivElement>;
 };
 
 export function QrCodePreview({
   dataUrl,
   studentId,
-  organizations,
+  organization,
   ref,
 }: QrCodePreviewProps) {
-  const availableOrganizations = [noOrganizationOption, ...organizations];
-  const [selectedOrganization, setSelectedOrganization] = useState<
-    string | null
-  >(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const selectedItem =
-    availableOrganizations.find(
-      (organization) => organization.value === selectedOrganization,
-    ) ?? null;
-
-  async function handleOrganizationChange(value: string | null) {
-    if (!value || value === selectedOrganization) {
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/member", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          student_id: studentId,
-          organization_id:
-            value === NO_ORGANIZATION_VALUE ? null : value,
-        }),
-      });
-      const data = await readResponseJson(response);
-
-      if (!response.ok) {
-        throw new Error(
-          apiErrorMessage(
-            data,
-            "Could not update the represented organization.",
-          ),
-        );
-      }
-
-      setSelectedOrganization(value);
-    } catch (updateError) {
-      setError(
-        requestErrorMessage(
-          updateError,
-          "Could not update the represented organization. Please try again.",
-        ),
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 px-6 pb-6 pt-2"
       ref={ref}
     >
-      <Field className="w-full max-w-sm">
-        <FieldLabel>Representing organization</FieldLabel>
-        <Select
-          disabled={saving}
-          isItemEqualToValue={(item, value) => item.value === value?.value}
-          items={availableOrganizations}
-          onValueChange={(value) => {
-            void handleOrganizationChange(value?.value ?? null);
-          }}
-          value={selectedItem}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select an organization" />
-          </SelectTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            <SelectGroup>
-              {availableOrganizations.map((organization) => (
-                <SelectItem key={organization.value} value={organization}>
-                  {organization.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectPopup>
-        </Select>
-        <FieldDescription>
-          {error
-            ? error
-            : saving
-              ? "Updating organization..."
-              : selectedOrganization === null
-                ? "Select the organization represented for attendance."
-                : selectedOrganization === NO_ORGANIZATION_VALUE
-                ? "Attendance will not represent an organization."
-                : "Attendance will be recorded under this organization."}
-        </FieldDescription>
-      </Field>
+      <p className="text-center text-sm text-muted-foreground">
+        Representing:{" "}
+        <strong className="text-foreground">
+          {organization?.label ?? "No organization"}
+        </strong>
+      </p>
       <Image
-        alt="Student QR Code"
+        alt={`Student QR Code for ${studentId}`}
         className="h-64 w-64 rounded-md border object-contain shadow-sm"
         height={256}
         src={dataUrl}

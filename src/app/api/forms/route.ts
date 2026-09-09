@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createMember,
-  MAX_MEMBER_ORGANIZATIONS,
-} from "@/lib/dynamodb/members";
-import { getOrganizations } from "@/lib/dynamodb/organizations";
+import { registerMember } from "@/lib/dynamodb/members";
+import { getOrganization } from "@/lib/dynamodb/organizations";
+import { parseMemberRegistrationInput } from "@/lib/member-registration";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
@@ -11,33 +9,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      full_name,
-      student_id,
-      course,
-      department,
-      organization_ids,
-      no_organization,
-    } = body as {
-      full_name: string;
-      student_id: string;
-      course: string;
-      department: string;
-      organization_ids: unknown;
-      no_organization: unknown;
-    };
+    const parsed = parseMemberRegistrationInput(body);
 
-    const normalizedFullName =
-      typeof full_name === "string" ? full_name.trim() : "";
-    const normalizedStudentId =
-      typeof student_id === "string" ? student_id.trim() : "";
-    const normalizedCourse =
-      typeof course === "string" ? course.trim() : "";
-    const normalizedDepartment =
-      typeof department === "string" ? department.trim() : "";
-    const noOrganization = no_organization === true;
-
-    if (normalizedStudentId.length > MAX_STUDENT_NUMBER_LENGTH) {
+    if (!parsed.ok && parsed.reason === "student-number-too-long") {
       return NextResponse.json(
         {
           error: `Student number cannot exceed ${MAX_STUDENT_NUMBER_LENGTH} characters`,
@@ -46,38 +20,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requestedOrganizationIds = Array.isArray(organization_ids)
-      ? Array.from(
-          new Set(
-            organization_ids
-              .filter((value): value is string => typeof value === "string")
-              .map((value) => value.trim())
-              .filter(Boolean),
-          ),
-        )
-      : [];
-    const hasOnlyStringIds =
-      Array.isArray(organization_ids) &&
-      requestedOrganizationIds.length === organization_ids.length;
-    const selectedOrganizations = hasOnlyStringIds
-      ? await getOrganizations(requestedOrganizationIds)
-      : [];
-    const organizationIds = selectedOrganizations.map(
-      (organization) => organization.value,
-    );
-
-    if (
-      !normalizedFullName ||
-      !normalizedStudentId ||
-      !normalizedCourse ||
-      !normalizedDepartment ||
-      (organizationIds.length === 0 && !noOrganization) ||
-      (organizationIds.length > 0 && noOrganization) ||
-      organizationIds.length > MAX_MEMBER_ORGANIZATIONS ||
-      organizationIds.length !== requestedOrganizationIds.length
-    ) {
+    if (!parsed.ok) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 },
+      );
+    }
+
+    const {
+      fullName,
+      studentId,
+      course,
+      department,
+      organizationId,
+    } = parsed.value;
+    const selectedOrganization = organizationId
+      ? await getOrganization(organizationId)
+      : null;
+
+    if (organizationId && !selectedOrganization) {
+      return NextResponse.json(
+        { error: "Invalid organization" },
         { status: 400 }
       );
     }
@@ -90,30 +53,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await createMember({
-      full_name: normalizedFullName,
-      student_id: normalizedStudentId,
-      course: normalizedCourse,
-      department: normalizedDepartment,
-      current_organization: "",
-    }, organizationIds);
-
-    if (result.status === "already-exists") {
-      return NextResponse.json(
-        { error: "This student number is already registered" },
-        { status: 409 }
-      );
-    }
+    const result = await registerMember(
+      {
+        full_name: fullName,
+        student_id: studentId,
+        course,
+        department,
+        current_organization: organizationId,
+      },
+      organizationId,
+    );
 
     return NextResponse.json(
       {
         success: true,
-        student_id: normalizedStudentId,
-        organization_ids: organizationIds,
-        organizations: selectedOrganizations,
-        current_organization: "",
+        status: result.status,
+        student_id: studentId,
+        organization: selectedOrganization,
+        current_organization: organizationId,
       },
-      { status: 201 }
+      { status: result.status === "created" ? 201 : 200 }
     );
   } catch (error) {
     console.error("Error in POST /api/forms:", error);

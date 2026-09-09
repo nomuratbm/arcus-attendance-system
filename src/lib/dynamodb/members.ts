@@ -2,13 +2,10 @@ import {
   BatchGetCommand,
   GetCommand,
   TransactWriteCommand,
-  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
-import {
-  getOrganization,
-  listOrganizations,
-} from "@/lib/dynamodb/organizations";
+import { listOrganizations } from "@/lib/dynamodb/organizations";
+import { planMemberRegistration } from "@/lib/member-registration";
 import type { OrganizationOption } from "@/lib/organizations";
 import {
   memberItemKey,
@@ -20,74 +17,190 @@ import { type Member } from "@/store/member-item";
 
 export type { Member };
 
-export const MAX_MEMBER_ORGANIZATIONS = 99;
+export type MemberDetails = Omit<
+  Member,
+  "PK" | "SK" | "registration_version"
+>;
 
-export type MemberDetails = Omit<Member, "PK" | "SK">;
-
-export type CreateMemberResult =
+export type RegisterMemberResult =
   | { status: "created" }
-  | { status: "already-exists" };
+  | { status: "replaced" };
 
-export async function createMember(
+const MAX_TRANSACTION_ITEMS = 100;
+const MAX_REGISTRATION_ATTEMPTS = 3;
+
+export async function registerMember(
   details: MemberDetails,
-  organizationIds: string[],
-): Promise<CreateMemberResult> {
+  organizationId: string,
+): Promise<RegisterMemberResult> {
   const studentId = details.student_id.trim();
   const key = memberItemKey(studentId);
-  const uniqueOrganizationIds = Array.from(
-    new Set(organizationIds.map((value) => value.trim()).filter(Boolean)),
-  );
+  const selectedOrganizationId = organizationId.trim();
 
-  if (uniqueOrganizationIds.length > MAX_MEMBER_ORGANIZATIONS) {
-    throw new Error(
-      `A member cannot select more than ${MAX_MEMBER_ORGANIZATIONS} organizations`,
+  for (let attempt = 0; attempt < MAX_REGISTRATION_ATTEMPTS; attempt += 1) {
+    const existingMember = await getMember(studentId);
+    const existingOrganizationIds = existingMember
+      ? await getMemberOrganizationIds(studentId)
+      : [];
+    const plan = planMemberRegistration(
+      existingMember?.registration_version ?? null,
+      existingOrganizationIds,
+      selectedOrganizationId,
     );
+
+    const fixedItemCount = selectedOrganizationId ? 2 : 1;
+    const transactionalStaleOrganizationIds =
+      plan.staleOrganizationIds.slice(
+        0,
+        MAX_TRANSACTION_ITEMS - fixedItemCount,
+      );
+    const deferredStaleOrganizationIds =
+      plan.staleOrganizationIds.slice(
+        MAX_TRANSACTION_ITEMS - fixedItemCount,
+      );
+    const memberPut = {
+      TableName: tableName(),
+      Item: {
+        PK: key,
+        SK: key,
+        ...details,
+        student_id: studentId,
+        current_organization: plan.currentOrganization,
+        registration_version: plan.registrationVersion,
+      },
+      ...(existingMember
+        ? existingMember.registration_version > 0
+          ? {
+              ConditionExpression:
+                "attribute_exists(PK) AND #registrationVersion = :expectedVersion",
+              ExpressionAttributeNames: {
+                "#registrationVersion": "registration_version",
+              },
+              ExpressionAttributeValues: {
+                ":expectedVersion": existingMember.registration_version,
+              },
+            }
+          : {
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_not_exists(#registrationVersion)",
+              ExpressionAttributeNames: {
+                "#registrationVersion": "registration_version",
+              },
+            }
+        : {
+            ConditionExpression: "attribute_not_exists(PK)",
+          }),
+    };
+
+    try {
+      await dynamodb.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: memberPut,
+            },
+            ...(selectedOrganizationId
+              ? [
+                  {
+                    Put: {
+                      TableName: tableName(),
+                      Item: {
+                        PK: organizationItemKey(selectedOrganizationId),
+                        SK: key,
+                        organization_id: selectedOrganizationId,
+                        student_id: studentId,
+                      },
+                    },
+                  },
+                ]
+              : []),
+            ...transactionalStaleOrganizationIds.map(
+              (staleOrganizationId) => ({
+                Delete: {
+                  TableName: tableName(),
+                  Key: {
+                    PK: organizationItemKey(staleOrganizationId),
+                    SK: key,
+                  },
+                },
+              }),
+            ),
+          ],
+        }),
+      );
+
+      if (deferredStaleOrganizationIds.length > 0) {
+        await deleteOrganizationMemberships(
+          studentId,
+          deferredStaleOrganizationIds,
+          plan.registrationVersion,
+        );
+      }
+
+      return { status: plan.status };
+    } catch (error: unknown) {
+      if (
+        isTransactionCanceled(error) &&
+        attempt + 1 < MAX_REGISTRATION_ATTEMPTS
+      ) {
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  try {
-    await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: tableName(),
-              Item: {
-                PK: key,
-                SK: key,
-                ...details,
-                student_id: studentId,
-                current_organization: "",
-              },
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-          ...uniqueOrganizationIds.map((organizationId) => ({
-            Put: {
-              TableName: tableName(),
-              Item: {
-                PK: organizationItemKey(organizationId),
-                SK: key,
-                organization_id: organizationId,
-                student_id: studentId,
-              },
-              ConditionExpression:
-                "attribute_not_exists(PK) AND attribute_not_exists(SK)",
-            },
-          })),
-        ],
-      }),
-    );
+  throw new Error(
+    `Could not replace registration for student ${studentId} after concurrent updates`,
+  );
+}
 
-    return { status: "created" };
-  } catch (error: unknown) {
-    if (
-      isConditionalCheckFailed(error) ||
-      (isTransactionCanceled(error) && (await getMember(studentId)) !== null)
-    ) {
-      return { status: "already-exists" };
+async function deleteOrganizationMemberships(
+  studentId: string,
+  organizationIds: string[],
+  registrationVersion: number,
+): Promise<void> {
+  const memberKey = memberItemKey(studentId);
+
+  for (let offset = 0; offset < organizationIds.length; offset += 99) {
+    try {
+      await dynamodb.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: tableName(),
+                Key: { PK: memberKey, SK: memberKey },
+                ConditionExpression:
+                  "#registrationVersion = :registrationVersion",
+                ExpressionAttributeNames: {
+                  "#registrationVersion": "registration_version",
+                },
+                ExpressionAttributeValues: {
+                  ":registrationVersion": registrationVersion,
+                },
+              },
+            },
+            ...organizationIds
+              .slice(offset, offset + 99)
+              .map((staleOrganizationId) => ({
+                Delete: {
+                  TableName: tableName(),
+                  Key: {
+                    PK: organizationItemKey(staleOrganizationId),
+                    SK: memberKey,
+                  },
+                },
+              })),
+          ],
+        }),
+      );
+    } catch (error: unknown) {
+      if (isTransactionCanceled(error)) {
+        return;
+      }
+      throw error;
     }
-
-    throw error;
   }
 }
 
@@ -178,97 +291,6 @@ export async function isMemberOfOrganization(
     }),
   );
   return Boolean(result.Item);
-}
-
-export type UpdateCurrentOrganizationResult =
-  | { status: "updated" }
-  | { status: "member-not-found" }
-  | { status: "not-member" };
-
-export async function updateMemberCurrentOrganization(
-  studentId: string,
-  organizationId: string,
-): Promise<UpdateCurrentOrganizationResult> {
-  const member = await getMember(studentId);
-  if (!member) {
-    return { status: "member-not-found" };
-  }
-
-  if (!organizationId) {
-    try {
-      await dynamodb.send(
-        new UpdateCommand({
-          TableName: tableName(),
-          Key: {
-            PK: memberItemKey(studentId),
-            SK: memberItemKey(studentId),
-          },
-          UpdateExpression: "SET current_organization = :organization",
-          ExpressionAttributeValues: {
-            ":organization": "",
-          },
-          ConditionExpression:
-            "attribute_exists(PK) AND attribute_exists(SK)",
-        }),
-      );
-      return { status: "updated" };
-    } catch (error: unknown) {
-      if (isConditionalCheckFailed(error)) {
-        return { status: "member-not-found" };
-      }
-      throw error;
-    }
-  }
-
-  const [organization, hasMembership] = await Promise.all([
-    getOrganization(organizationId),
-    isMemberOfOrganization(studentId, organizationId),
-  ]);
-  if (!organization || !hasMembership) {
-    return { status: "not-member" };
-  }
-
-  try {
-    await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: tableName(),
-              Key: {
-                PK: organizationItemKey(organizationId),
-                SK: memberItemKey(studentId),
-              },
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_exists(SK)",
-            },
-          },
-          {
-            Update: {
-              TableName: tableName(),
-              Key: {
-                PK: memberItemKey(studentId),
-                SK: memberItemKey(studentId),
-              },
-              UpdateExpression: "SET current_organization = :organization",
-              ExpressionAttributeValues: {
-                ":organization": organizationId,
-              },
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_exists(SK)",
-            },
-          },
-        ],
-      }),
-    );
-
-    return { status: "updated" };
-  } catch (error: unknown) {
-    if (isTransactionCanceled(error)) {
-      return { status: "not-member" };
-    }
-    throw error;
-  }
 }
 
 export async function getMembers(
@@ -363,16 +385,13 @@ function memberFromRecord(item: Record<string, unknown>): Member | null {
       typeof item.current_organization === "string"
         ? item.current_organization
         : "",
+    registration_version:
+      typeof item.registration_version === "number" &&
+      Number.isInteger(item.registration_version) &&
+      item.registration_version > 0
+        ? item.registration_version
+        : 0,
   };
-}
-
-function isConditionalCheckFailed(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: string }).name === "ConditionalCheckFailedException"
-  );
 }
 
 function isTransactionCanceled(error: unknown): boolean {

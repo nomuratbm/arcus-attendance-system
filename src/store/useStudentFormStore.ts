@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { NO_ORGANIZATION_VALUE } from "@/lib/organizations";
 import { memberItemKey } from "@/store/dynamodb-keys";
 import type { Member } from "@/store/member-item";
 
@@ -18,12 +19,13 @@ export interface StudentFormData {
   studentNumber: string;
   programYear: string;
   department: string;
-  organizationIds: string[];
-  noOrganizationSelected: boolean;
+  organizationSelection: string;
 }
 
 interface StudentFormState extends StudentFormData {
+  submitting: boolean;
   setFormData: (data: Partial<StudentFormData>) => void;
+  setSubmitting: (submitting: boolean) => void;
   clearFormData: () => void;
   buildMemberItem: () => Member;
 }
@@ -33,14 +35,15 @@ const emptyFormData: StudentFormData = {
   studentNumber: "",
   programYear: "",
   department: "",
-  organizationIds: [],
-  noOrganizationSelected: false,
+  organizationSelection: "",
 };
 
 export const useStudentFormStore = create<StudentFormState>((set, get) => ({
   ...emptyFormData,
+  submitting: false,
 
   setFormData: (data) => set((state) => ({ ...state, ...data })),
+  setSubmitting: (submitting) => set({ submitting }),
 
   clearFormData: () => set(emptyFormData),
 
@@ -55,7 +58,11 @@ export const useStudentFormStore = create<StudentFormState>((set, get) => ({
       student_id: studentId,
       course: state.programYear.trim(),
       department: state.department.trim(),
-      current_organization: "",
+      current_organization:
+        state.organizationSelection === NO_ORGANIZATION_VALUE
+          ? ""
+          : state.organizationSelection,
+      registration_version: 0,
     };
   },
 }));

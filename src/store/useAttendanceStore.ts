@@ -88,6 +88,10 @@ export function memberFromDynamoItem(
       typeof item.current_organization === "string"
         ? item.current_organization
         : "",
+    registration_version:
+      typeof item.registration_version === "number"
+        ? item.registration_version
+        : 0,
   };
 }
 
@@ -131,6 +135,10 @@ export function parseAttendanceRecord(
         typeof raw.current_organization === "string"
           ? raw.current_organization
           : "",
+      registration_version:
+        typeof raw.registration_version === "number"
+          ? raw.registration_version
+          : 0,
     },
     member_organization:
       typeof raw.member_organization === "string"

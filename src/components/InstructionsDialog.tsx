@@ -15,9 +15,10 @@ import {
 
 const INSTRUCTIONS = [
   "Enter your details in the fields on this page.",
-  "A QR code is generated from your student number. Keep it — each student number can only be registered once.",
+  "Choose one organization to represent, or select No organization.",
+  "A QR code is generated from your student number.",
   "Show this QR code at organization/mapua-wide events to mark your attendance.",
-  "If you lose the QR code, open Retrieve and enter your student number to generate it again. Registering twice with the same number will be rejected.",
+  "If you lose the QR code or want to change your represented organization, register again. Your current profile will be replaced, but past attendance will remain.",
 ] as const;
 
 const instructionList = (

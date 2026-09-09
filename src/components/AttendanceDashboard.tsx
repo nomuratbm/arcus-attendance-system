@@ -6,6 +6,7 @@ import { useEventsStore } from "@/store/useEventsStore";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableHeader,
@@ -191,7 +192,7 @@ export function AttendanceDashboard() {
 
           <div className="flex items-center gap-2">
             <Button
-              disabled={!selectedEventPK}
+              disabled={!selectedEventPK || attendanceLoading}
               loading={isExporting}
               onClick={handleExportCsv}
               size="sm"
@@ -201,6 +202,7 @@ export function AttendanceDashboard() {
 
             {attendanceHistory.length > 0 && (
               <Button
+                disabled={attendanceLoading}
                 variant="outline"
                 size="sm"
                 className="text-muted-foreground hover:text-destructive"
@@ -216,7 +218,10 @@ export function AttendanceDashboard() {
         ) : null}
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-5 pt-5">
+      <CardContent
+        aria-busy={attendanceLoading}
+        className="flex flex-col gap-5 pt-5"
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="p-3.5 bg-muted/40 border rounded-lg">
             <span className="text-[11px] text-muted-foreground block uppercase font-medium">
@@ -244,6 +249,7 @@ export function AttendanceDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-sm">
             <Input
+              disabled={attendanceLoading}
               size="sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -251,6 +257,7 @@ export function AttendanceDashboard() {
             />
             {searchQuery && (
               <button
+                disabled={attendanceLoading}
                 onClick={() => setSearchQuery("")}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs font-semibold"
               >
@@ -285,7 +292,21 @@ export function AttendanceDashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRecords.length === 0 ? (
+              {attendanceLoading ? (
+                [0, 1, 2, 3].map((row) => (
+                  <TableRow key={row}>
+                    <TableCell>
+                      <Skeleton className="mx-auto size-4" />
+                    </TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="ml-auto h-4 w-14" /></TableCell>
+                    <TableCell><Skeleton className="ml-auto h-4 w-14" /></TableCell>
+                    <TableCell><Skeleton className="mx-auto size-6" /></TableCell>
+                  </TableRow>
+                ))
+              ) : filteredRecords.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {emptyMessage}
@@ -313,6 +334,7 @@ export function AttendanceDashboard() {
                       </TableCell>
                       <TableCell className="text-center">
                         <Button
+                          disabled={attendanceLoading}
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => setRecordToDelete(item)}

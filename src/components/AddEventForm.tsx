@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,8 +12,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectGroup,
@@ -136,7 +139,8 @@ export function AddEventForm() {
 
   return (
     <ToastProvider position="bottom-right">
-      <Card className="w-full">
+      <Card aria-busy={submitting} className="relative w-full">
+        {submitting ? <AsyncLoadingOverlay label="Creating event..." /> : null}
         <CardHeader>
           <CardTitle>Event details</CardTitle>
           <CardDescription>
@@ -148,10 +152,18 @@ export function AddEventForm() {
           className="contents"
           onFormSubmit={handleFormSubmit}
         >
+          <Fieldset className="contents" disabled={submitting}>
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="organization">
               <FieldLabel>Organization</FieldLabel>
-              <Select
+              {organizationsLoading ? (
+                <Skeleton
+                  aria-label="Loading organizations"
+                  className="h-9 w-full"
+                  role="status"
+                />
+              ) : (
+                <Select
                 disabled={organizationsLoading || Boolean(organizationsError)}
                 isItemEqualToValue={(item, value) =>
                   item.value === value?.value
@@ -178,7 +190,8 @@ export function AddEventForm() {
                     ))}
                   </SelectGroup>
                 </SelectPopup>
-              </Select>
+                </Select>
+              )}
               {organizationsError ? (
                 <div
                   className="flex flex-wrap items-center gap-2 text-destructive-foreground text-xs"
@@ -234,6 +247,7 @@ export function AddEventForm() {
               Add event
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
       </Card>
     </ToastProvider>

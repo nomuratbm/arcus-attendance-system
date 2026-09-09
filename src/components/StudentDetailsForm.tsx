@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,7 +35,7 @@ import { ToastProvider, toastManager } from "@/components/ui/toast";
 import { useQrCode } from "@/hooks/use-qr-code";
 import { departmentCampuses, departmentItems } from "@/lib/departments";
 import {
-  parseOrganizationOptions,
+  NO_ORGANIZATION_VALUE,
   type OrganizationOption,
 } from "@/lib/organizations";
 import {
@@ -46,8 +48,36 @@ import { useStudentFormStore } from "@/store/useStudentFormStore";
 
 type QrMemberContext = {
   studentId: string;
-  organizations: OrganizationOption[];
+  organization: OrganizationOption | null;
 };
+
+function organizationFromResponse(value: unknown): OrganizationOption | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("organization" in value) ||
+    value.organization === null
+  ) {
+    return null;
+  }
+
+  const organization = value.organization;
+  if (
+    typeof organization !== "object" ||
+    organization === null ||
+    !("label" in organization) ||
+    typeof organization.label !== "string" ||
+    !("value" in organization) ||
+    typeof organization.value !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    label: organization.label,
+    value: organization.value,
+  };
+}
 
 const departmentSelectGroups = departmentCampuses.map((group, index) => (
   <Fragment key={group.campus}>
@@ -84,10 +114,17 @@ function departmentFromSelectValue(value: unknown) {
   return "";
 }
 
-function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
+function DepartmentSelect({
+  defaultValue,
+  disabled,
+}: {
+  defaultValue: string;
+  disabled?: boolean;
+}) {
   return (
     <Select
       defaultValue={defaultValue || null}
+      disabled={disabled}
       items={departmentItems}
       name="department"
       onValueChange={(value) => {
@@ -109,7 +146,8 @@ function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
 
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
+  const submitting = useStudentFormStore((state) => state.submitting);
+  const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
   const [qrMemberContext, setQrMemberContext] =
     useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -145,15 +183,11 @@ export function StudentDetailsForm() {
       return;
     }
 
-    if (
-      formState.organizationIds.length === 0 &&
-      !formState.noOrganizationSelected
-    ) {
+    if (!formState.organizationSelection) {
       toastManager.add({
         type: "error",
         title: "Select an organization option",
-        description:
-          "Choose at least one organization or select No organization.",
+        description: "Choose one organization or select No organization.",
       });
       return;
     }
@@ -170,35 +204,34 @@ export function StudentDetailsForm() {
           student_id: memberItem.student_id,
           course: memberItem.course,
           department: memberItem.department,
-          organization_ids: formState.organizationIds,
-          no_organization: formState.noOrganizationSelected,
+          organization_id:
+            formState.organizationSelection === NO_ORGANIZATION_VALUE
+              ? null
+              : formState.organizationSelection,
         }),
       });
 
       const data = await readResponseJson(response);
 
       if (response.ok) {
-        const selectedOrganizations = parseOrganizationOptions(data);
         setQrMemberContext({
           studentId: memberItem.student_id,
-          organizations: selectedOrganizations,
+          organization: organizationFromResponse(data),
         });
         await generate(memberItem.student_id);
+        const wasReplaced =
+          typeof data === "object" &&
+          data !== null &&
+          "status" in data &&
+          data.status === "replaced";
         toastManager.add({
           type: "success",
-          title: "Student registered",
+          title: wasReplaced ? "Registration replaced" : "Student registered",
           description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
         });
         setTimeout(() => {
           qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }, 100);
-      } else if (response.status === 409) {
-        toastManager.add({
-          type: "error",
-          title: "Already registered",
-          description:
-            "This student number is already registered. Use Retrieve to get your QR code.",
-        });
       } else {
         toastManager.add({
           type: "error",
@@ -232,7 +265,10 @@ export function StudentDetailsForm() {
 
   return (
     <ToastProvider position="bottom-right">
-      <Card className="w-full">
+      <Card aria-busy={submitting} className="relative w-full">
+        {submitting ? (
+          <AsyncLoadingOverlay label="Registering student..." />
+        ) : null}
         <CardHeader>
           <CardTitle>Student details</CardTitle>
           <CardDescription>
@@ -244,6 +280,7 @@ export function StudentDetailsForm() {
           className="contents"
           onFormSubmit={handleFormSubmit}
         >
+          <Fieldset className="contents" disabled={submitting}>
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="studentName">
               <FieldLabel>Student Name</FieldLabel>
@@ -300,7 +337,7 @@ export function StudentDetailsForm() {
 
             <Field className="w-full" name="department">
               <FieldLabel>Department</FieldLabel>
-              <DepartmentSelect defaultValue="" />
+              <DepartmentSelect defaultValue="" disabled={submitting} />
               <FieldError>Please select a department.</FieldError>
             </Field>
           </CardPanel>
@@ -312,12 +349,13 @@ export function StudentDetailsForm() {
               {submitting ? "Registering..." : "Save student"}
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
         {dataUrl && qrMemberContext ? (
           <QrCodePreview
             key={qrMemberContext.studentId}
             dataUrl={dataUrl}
-            organizations={qrMemberContext.organizations}
+            organization={qrMemberContext.organization}
             ref={qrRef}
             studentId={qrMemberContext.studentId}
           />
