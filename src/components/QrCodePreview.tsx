@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState, type Ref } from "react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import {
   Select,
   SelectGroup,
@@ -97,7 +98,13 @@ export function QrCodePreview({
       className="flex flex-col items-center justify-center gap-4 px-6 pb-6 pt-2"
       ref={ref}
     >
-      <Field className="w-full max-w-sm">
+      <Field aria-busy={saving} className="relative w-full max-w-sm">
+        {saving ? (
+          <AsyncLoadingOverlay
+            className="-inset-2"
+            label="Updating organization..."
+          />
+        ) : null}
         <FieldLabel>Representing organization</FieldLabel>
         <Select
           disabled={saving}

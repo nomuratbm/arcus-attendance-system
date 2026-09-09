@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -84,10 +86,17 @@ function departmentFromSelectValue(value: unknown) {
   return "";
 }
 
-function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
+function DepartmentSelect({
+  defaultValue,
+  disabled,
+}: {
+  defaultValue: string;
+  disabled?: boolean;
+}) {
   return (
     <Select
       defaultValue={defaultValue || null}
+      disabled={disabled}
       items={departmentItems}
       name="department"
       onValueChange={(value) => {
@@ -109,7 +118,8 @@ function DepartmentSelect({ defaultValue }: { defaultValue: string }) {
 
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
+  const submitting = useStudentFormStore((state) => state.submitting);
+  const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
   const [qrMemberContext, setQrMemberContext] =
     useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -232,7 +242,10 @@ export function StudentDetailsForm() {
 
   return (
     <ToastProvider position="bottom-right">
-      <Card className="w-full">
+      <Card aria-busy={submitting} className="relative w-full">
+        {submitting ? (
+          <AsyncLoadingOverlay label="Registering student..." />
+        ) : null}
         <CardHeader>
           <CardTitle>Student details</CardTitle>
           <CardDescription>
@@ -244,6 +257,7 @@ export function StudentDetailsForm() {
           className="contents"
           onFormSubmit={handleFormSubmit}
         >
+          <Fieldset className="contents" disabled={submitting}>
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="studentName">
               <FieldLabel>Student Name</FieldLabel>
@@ -300,7 +314,7 @@ export function StudentDetailsForm() {
 
             <Field className="w-full" name="department">
               <FieldLabel>Department</FieldLabel>
-              <DepartmentSelect defaultValue="" />
+              <DepartmentSelect defaultValue="" disabled={submitting} />
               <FieldError>Please select a department.</FieldError>
             </Field>
           </CardPanel>
@@ -308,10 +322,11 @@ export function StudentDetailsForm() {
             <Button onClick={handleClear} type="reset" variant="ghost">
               Clear
             </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Registering..." : "Save student"}
+            <Button loading={submitting} type="submit">
+              Save student
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
         {dataUrl && qrMemberContext ? (
           <QrCodePreview

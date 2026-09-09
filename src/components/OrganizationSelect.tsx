@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Combobox,
   ComboboxChip,
@@ -26,6 +27,7 @@ export function OrganizationSelect() {
   const noOrganizationSelected = useStudentFormStore(
     (state) => state.noOrganizationSelected,
   );
+  const submitting = useStudentFormStore((state) => state.submitting);
   const setFormData = useStudentFormStore((state) => state.setFormData);
   const organizations = useOrganizationsStore((state) => state.organizations);
   const organizationsError = useOrganizationsStore(
@@ -72,8 +74,15 @@ export function OrganizationSelect() {
   return (
     <Field className="w-full">
       <FieldLabel>Organizations</FieldLabel>
+      {organizationsLoading ? (
+        <Skeleton
+          aria-label="Loading organizations"
+          className="h-9 w-full"
+          role="status"
+        />
+      ) : (
       <Combobox
-        disabled={organizationsLoading}
+        disabled={organizationsLoading || submitting}
         isItemEqualToValue={(item, value) => item.value === value.value}
         itemToStringValue={(organization) => organization.label}
         items={availableOrganizations}
@@ -133,12 +142,13 @@ export function OrganizationSelect() {
           </ComboboxList>
         </ComboboxPopup>
       </Combobox>
+      )}
       <FieldDescription>
         {organizationsError ? (
           <span className="flex flex-wrap items-center gap-2" role="alert">
             <span>{organizationsError}</span>
             <Button
-              disabled={organizationsLoading}
+              disabled={organizationsLoading || submitting}
               onClick={() => void loadOrganizations(true)}
               size="sm"
               type="button"

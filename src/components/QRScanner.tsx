@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import QrScanner from "qr-scanner";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import {
   memberFromDynamoItem,
   useAttendanceStore,
@@ -15,6 +16,29 @@ import {
   readResponseJson,
   requestErrorMessage,
 } from "@/lib/request-errors";
+
+async function persistCheckIn(
+  body: Record<string, unknown>,
+  fallbackMessage: string,
+  acceptConflict = false,
+): Promise<string | null> {
+  try {
+    const response = await fetch("/api/checkin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok || (acceptConflict && response.status === 409)) {
+      return null;
+    }
+
+    const data = await readResponseJson(response);
+    return apiErrorMessage(data, fallbackMessage);
+  } catch (error) {
+    console.error("Check-in persist error:", error);
+    return requestErrorMessage(error, fallbackMessage);
+  }
+}
 
 export function QRScanner() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -111,41 +135,19 @@ export function QRScanner() {
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
             const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
-            void fetch("/api/checkin", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
+            const persistError = await persistCheckIn(
+              {
                 eventId: rawEventId,
                 student_id: rawStudentId,
                 mode: "leave",
                 leftAt: record.leftAt,
-              }),
-            })
-              .then(async (leaveResponse) => {
-                if (leaveResponse.ok) {
-                  return;
-                }
-                const leaveData = await readResponseJson(leaveResponse);
-                setScanStatus("error");
-                setAlert(
-                  "error",
-                  apiErrorMessage(
-                    leaveData,
-                    "Could not save the leave time. Please scan again.",
-                  ),
-                );
-              })
-              .catch((error: unknown) => {
-                console.error("Leave persist error:", error);
-                setScanStatus("error");
-                setAlert(
-                  "error",
-                  requestErrorMessage(
-                    error,
-                    "Could not save the leave time. Please scan again.",
-                  ),
-                );
-              });
+              },
+              "Could not save the leave time. Please scan again.",
+            );
+            if (persistError) {
+              setScanStatus("error");
+              setAlert("error", persistError);
+            }
             return;
           }
 
@@ -170,41 +172,20 @@ export function QRScanner() {
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
             const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
-            void fetch("/api/checkin", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
+            const persistError = await persistCheckIn(
+              {
                 eventId: rawEventId,
                 student_id: rawStudentId,
                 scannedAt: record.scannedAt,
                 timestamp: record.timestamp,
-              }),
-            })
-              .then(async (checkInResponse) => {
-                if (checkInResponse.ok || checkInResponse.status === 409) {
-                  return;
-                }
-                const checkInData = await readResponseJson(checkInResponse);
-                setScanStatus("error");
-                setAlert(
-                  "error",
-                  apiErrorMessage(
-                    checkInData,
-                    "Could not save the check-in. Please scan again.",
-                  ),
-                );
-              })
-              .catch((error: unknown) => {
-                console.error("Check-in persist error:", error);
-                setScanStatus("error");
-                setAlert(
-                  "error",
-                  requestErrorMessage(
-                    error,
-                    "Could not save the check-in. Please scan again.",
-                  ),
-                );
-              });
+              },
+              "Could not save the check-in. Please scan again.",
+              true,
+            );
+            if (persistError) {
+              setScanStatus("error");
+              setAlert("error", persistError);
+            }
           }
         } else {
           setCurrentMember(null);
@@ -375,7 +356,11 @@ export function QRScanner() {
   }, []);
 
   return (
-    <Card className="flex flex-col justify-between">
+    <Card
+      aria-busy={loading}
+      className="relative flex flex-col justify-between"
+    >
+      {loading ? <AsyncLoadingOverlay label="Processing QR code..." /> : null}
       <div>
         <CardHeader className="pb-4 border-b">
           <div className="flex items-center justify-between">
@@ -387,7 +372,7 @@ export function QRScanner() {
               <Button
                 variant={scannerMode === "camera" ? "default" : "ghost"}
                 size="xs"
-                disabled={!canScan}
+                disabled={!canScan || loading}
                 onClick={() => {
                   stopCamera();
                   setScannerMode("camera");
@@ -398,7 +383,7 @@ export function QRScanner() {
               <Button
                 variant={scannerMode === "file" ? "default" : "ghost"}
                 size="xs"
-                disabled={!canScan}
+                disabled={!canScan || loading}
                 onClick={() => {
                   stopCamera();
                   setScannerMode("file");
@@ -469,7 +454,7 @@ export function QRScanner() {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                disabled={!canScan}
+                disabled={!canScan || loading}
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -491,7 +476,12 @@ export function QRScanner() {
               {loading ? "Verifying..." : scannerActive ? "Stop Camera" : "Start Camera"}
             </Button>
             {scannerActive && (
-              <Button variant="outline" size="sm" onClick={resetScanner}>
+              <Button
+                disabled={loading}
+                variant="outline"
+                size="sm"
+                onClick={resetScanner}
+              >
                 Resume
               </Button>
             )}

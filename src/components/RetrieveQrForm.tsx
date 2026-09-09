@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useQrCode } from "@/hooks/use-qr-code";
@@ -134,7 +136,12 @@ export function RetrieveQrForm() {
 
   return (
     <>
-      <Card className="w-full">
+      <Card aria-busy={busy} className="relative w-full">
+        {busy ? (
+          <AsyncLoadingOverlay
+            label={checking ? "Checking registration..." : "Generating QR code..."}
+          />
+        ) : null}
         <CardHeader>
           <CardTitle>Retrieve QR code</CardTitle>
           <CardDescription>
@@ -146,6 +153,7 @@ export function RetrieveQrForm() {
           key={formKey}
           onFormSubmit={handleFormSubmit}
         >
+          <Fieldset className="contents" disabled={busy}>
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="studentNumber">
               <FieldLabel>Student Number</FieldLabel>
@@ -165,14 +173,11 @@ export function RetrieveQrForm() {
             <Button onClick={handleClear} type="reset" variant="ghost">
               Clear
             </Button>
-            <Button disabled={busy} type="submit">
-              {checking
-                ? "Checking..."
-                : generating
-                  ? "Generating..."
-                  : "Generate QR"}
+            <Button loading={busy} type="submit">
+              Generate QR
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
         {dataUrl && qrMemberContext ? (
           <QrCodePreview

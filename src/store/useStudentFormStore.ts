@@ -23,7 +23,9 @@ export interface StudentFormData {
 }
 
 interface StudentFormState extends StudentFormData {
+  submitting: boolean;
   setFormData: (data: Partial<StudentFormData>) => void;
+  setSubmitting: (submitting: boolean) => void;
   clearFormData: () => void;
   buildMemberItem: () => Member;
 }
@@ -39,10 +41,12 @@ const emptyFormData: StudentFormData = {
 
 export const useStudentFormStore = create<StudentFormState>((set, get) => ({
   ...emptyFormData,
+  submitting: false,
 
   setFormData: (data) => set((state) => ({ ...state, ...data })),
+  setSubmitting: (submitting) => set({ submitting }),
 
-  clearFormData: () => set(emptyFormData),
+  clearFormData: () => set({ ...emptyFormData, submitting: false }),
 
   buildMemberItem: () => {
     const state = get();

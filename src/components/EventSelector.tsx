@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import {
@@ -71,6 +72,9 @@ export function EventSelector() {
   const removeEvent = useEventsStore((state) => state.removeEvent);
   const eventsLoading = useEventsStore((state) => state.eventsLoading);
   const eventsError = useEventsStore((state) => state.eventsError);
+  const attendanceLoading = useAttendanceStore(
+    (state) => state.attendanceLoading,
+  );
   const scanTimestampMode = useAttendanceStore(
     (state) => state.scanTimestampMode,
   );
@@ -187,8 +191,20 @@ export function EventSelector() {
         <CardPanel className="flex flex-col gap-4">
           <Field className="w-full">
             <FieldLabel>Organization</FieldLabel>
+            {organizationsLoading ? (
+              <Skeleton
+                aria-label="Loading organizations"
+                className="h-9 w-full"
+                role="status"
+              />
+            ) : (
             <Select
-              disabled={organizationsLoading || Boolean(organizationsError)}
+              disabled={
+                organizationsLoading ||
+                eventsLoading ||
+                attendanceLoading ||
+                Boolean(organizationsError)
+              }
               isItemEqualToValue={(item, value) =>
                 item.value === value?.value
               }
@@ -212,6 +228,7 @@ export function EventSelector() {
                 </SelectGroup>
               </SelectPopup>
             </Select>
+            )}
             <FieldDescription>
               {organizationsError ? (
                 <span className="flex flex-wrap items-center gap-2" role="alert">
@@ -233,10 +250,17 @@ export function EventSelector() {
           </Field>
           <Field className="w-full">
             <FieldLabel>Event</FieldLabel>
+            {eventsLoading ? (
+              <Skeleton
+                aria-label="Loading events"
+                className="h-9 w-full"
+                role="status"
+              />
+            ) : (
             <ContextMenu>
               <ContextMenuTrigger className="block w-full" render={<div />}>
                 <Select
-                  disabled={!hasEvents}
+                  disabled={!hasEvents || attendanceLoading}
                   isItemEqualToValue={(itemValue, value) =>
                     itemValue.value === value?.value
                   }
@@ -274,6 +298,7 @@ export function EventSelector() {
                 </ContextMenuGroup>
               </ContextMenuPopup>
             </ContextMenu>
+            )}
             <FieldDescription>
               {eventsError
                 ? eventsError
@@ -308,7 +333,14 @@ export function EventSelector() {
         </CardPanel>
       </Card>
 
-      <AlertDialog onOpenChange={setIsDeleteOpen} open={isDeleteOpen}>
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setIsDeleteOpen(open);
+          }
+        }}
+        open={isDeleteOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete event?</AlertDialogTitle>
@@ -321,7 +353,11 @@ export function EventSelector() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button size="sm" variant="outline" />}>
+            <AlertDialogClose
+              render={
+                <Button disabled={isDeleting} size="sm" variant="outline" />
+              }
+            >
               Cancel
             </AlertDialogClose>
             <Button

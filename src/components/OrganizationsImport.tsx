@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import {
   Alert,
   AlertDescription,
@@ -23,8 +24,10 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
+import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   apiErrorMessage,
   readResponseJson,
@@ -177,7 +180,8 @@ export function OrganizationsImport() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
+      <Card aria-busy={adding} className="relative">
+        {adding ? <AsyncLoadingOverlay label="Adding organization..." /> : null}
         <CardHeader>
           <CardTitle>Add organization</CardTitle>
           <CardDescription>
@@ -190,6 +194,7 @@ export function OrganizationsImport() {
           key={addFormKey}
           onFormSubmit={handleAdd}
         >
+          <Fieldset className="contents" disabled={adding}>
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="name">
               <FieldLabel>Organization name</FieldLabel>
@@ -222,6 +227,7 @@ export function OrganizationsImport() {
               Add organization
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
       </Card>
 
@@ -243,7 +249,10 @@ export function OrganizationsImport() {
         </Alert>
       ) : null}
 
-      <Card>
+      <Card aria-busy={importing} className="relative">
+        {importing ? (
+          <AsyncLoadingOverlay label="Importing organizations..." />
+        ) : null}
         <CardHeader>
           <CardTitle>Import organizations</CardTitle>
           <CardDescription>
@@ -256,6 +265,7 @@ export function OrganizationsImport() {
           key={formKey}
           onFormSubmit={handleImport}
         >
+          <Fieldset className="contents" disabled={importing}>
           <CardPanel>
             <Field className="w-full" name="file">
               <FieldLabel>Organization CSV</FieldLabel>
@@ -282,6 +292,7 @@ export function OrganizationsImport() {
               Import organizations
             </Button>
           </CardFooter>
+          </Fieldset>
         </Form>
       </Card>
 
@@ -359,16 +370,18 @@ export function OrganizationsImport() {
                     </TableCell>
                   </TableRow>
                 ) : null}
-                {organizationsLoading ? (
-                  <TableRow>
-                    <TableCell
-                      className="py-8 text-center text-muted-foreground"
-                      colSpan={2}
-                    >
-                      Loading organizations...
-                    </TableCell>
-                  </TableRow>
-                ) : null}
+                {organizationsLoading
+                  ? [0, 1, 2].map((row) => (
+                      <TableRow key={row}>
+                        <TableCell>
+                          <Skeleton className="h-4 w-2/3" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="ml-auto h-5 w-20" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : null}
               </TableBody>
             </Table>
           )}
