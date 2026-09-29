@@ -53,6 +53,33 @@ export function getLogoutUrl(): string {
   return url.toString();
 }
 
+const ADMIN_PATH_PREFIXES = ["/scanner", "/addevent", "/organizations"] as const;
+
+export function isAdminOnlyPath(value: string): boolean {
+  return ADMIN_PATH_PREFIXES.some(
+    (prefix) => value === prefix || value.startsWith(`${prefix}/`),
+  );
+}
+
+export function isOrganizationsPath(value: string): boolean {
+  return value === "/organizations" || value.startsWith("/organizations/");
+}
+
+export function sessionReturnPath(
+  path: string,
+  user: { isAdmin: boolean; isSuperAdmin: boolean },
+): string {
+  if (isOrganizationsPath(path) && !user.isSuperAdmin) {
+    return "/forbidden";
+  }
+
+  if (isAdminOnlyPath(path) && !user.isAdmin) {
+    return "/forbidden";
+  }
+
+  return path;
+}
+
 export function safeReturnPath(value: string | null | undefined): string {
   if (
     !value ||
@@ -60,22 +87,14 @@ export function safeReturnPath(value: string | null | undefined): string {
     value.startsWith("//") ||
     value.includes("\\")
   ) {
-    return "/scanner";
+    return "/";
   }
 
-  if (value === "/scanner" || value.startsWith("/scanner/")) {
+  if (value === "/" || isAdminOnlyPath(value)) {
     return value;
   }
 
-  if (value === "/addevent" || value.startsWith("/addevent/")) {
-    return value;
-  }
-
-  if (value === "/organizations" || value.startsWith("/organizations/")) {
-    return value;
-  }
-
-  return "/scanner";
+  return "/";
 }
 
 export async function exchangeAuthorizationCode(

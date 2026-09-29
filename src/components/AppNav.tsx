@@ -9,11 +9,6 @@ import {
   segmentedControlRootClassName,
 } from "@/lib/segmented-control";
 
-const publicNavItems = [
-  { href: "/", label: "Register" },
-  { href: "/retrieve", label: "Retrieve" },
-] as const;
-
 const adminNavItems = [
   { href: "/scanner", label: "Scanner" },
   { href: "/addevent", label: "Add Event" },
@@ -59,32 +54,47 @@ function SegmentedPageNav({
   );
 }
 
-function isPublicPath(pathname: string) {
-  return pathname === "/" || pathname === "/retrieve";
+function isAdminPath(pathname: string) {
+  return (
+    pathname === "/scanner" ||
+    pathname === "/addevent" ||
+    pathname === "/organizations"
+  );
 }
 
-export function AppNav() {
+export function AppNav({
+  isAdmin,
+  isSuperAdmin,
+}: {
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+}) {
   const pathname = usePathname();
+  const navItems = isSuperAdmin
+    ? adminNavItems
+    : adminNavItems.filter((item) => item.href !== "/organizations");
 
-  if (isPublicPath(pathname)) {
+  if (!isAdminPath(pathname)) {
     return (
-      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
-        <SegmentedPageNav items={publicNavItems} pathname={pathname} />
-        <Button
-          onFocus={preloadScanner}
-          onMouseEnter={preloadScanner}
-          render={<a href="/api/auth/login?next=/scanner" />}
-          size="sm"
-        >
-          Admin
-        </Button>
+      <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-3">
+        {isAdmin ? (
+          <Button
+            onFocus={preloadScanner}
+            onMouseEnter={preloadScanner}
+            render={<a href="/api/auth/login?next=/scanner" />}
+            size="sm"
+          >
+            Admin
+          </Button>
+        ) : null}
+        <SignOutButton />
       </div>
     );
   }
 
   return (
     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
-      <SegmentedPageNav items={adminNavItems} pathname={pathname} />
+      <SegmentedPageNav items={navItems} pathname={pathname} />
       <div className="flex items-center gap-2 sm:gap-3">
         <Button render={<Link href="/" />} size="sm">
           Register

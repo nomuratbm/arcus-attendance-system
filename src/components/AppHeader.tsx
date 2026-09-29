@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AppNav } from "@/components/AppNav";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { getSessionUser } from "@/lib/auth/session";
 
 const BUG_REPORT_EMAIL = "awsstudentbuildergrouparcus@gmail.com";
 
@@ -19,7 +20,8 @@ export function PageShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function AppHeader({ subtitle, children }: AppHeaderProps) {
+export async function AppHeader({ subtitle, children }: AppHeaderProps) {
+  const user = await getSessionUser();
   return (
     <header className="border-b bg-card">
       <div className="mx-auto grid w-full max-w-5xl min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 px-4 py-3 sm:flex sm:h-16 sm:px-6 sm:py-0">
@@ -31,7 +33,10 @@ export function AppHeader({ subtitle, children }: AppHeaderProps) {
         </div>
         <div className="order-last col-span-2 w-full min-w-0 sm:order-none sm:ml-auto sm:w-auto">
           <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
-            <AppNav />
+            <AppNav
+              isAdmin={user?.isAdmin ?? false}
+              isSuperAdmin={user?.isSuperAdmin ?? false}
+            />
             {children}
           </div>
         </div>

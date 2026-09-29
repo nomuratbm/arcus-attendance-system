@@ -1,41 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createMember,
-  MAX_MEMBER_ORGANIZATIONS,
-} from "@/lib/dynamodb/members";
-import { getOrganizations } from "@/lib/dynamodb/organizations";
+import { requireUserApi } from "@/lib/auth/session";
+import { registerMemberForUser } from "@/lib/dynamodb/members";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const user = await requireUserApi();
+  if (user instanceof NextResponse) {
+    return user;
+  }
+
   try {
     const body = await request.json();
-    const {
-      full_name,
-      student_id,
-      course,
-      department,
-      organization_ids,
-      no_organization,
-    } = body as {
+    const { full_name, student_id, course, department } = body as {
       full_name: string;
       student_id: string;
       course: string;
       department: string;
-      organization_ids: unknown;
-      no_organization: unknown;
     };
 
     const normalizedFullName =
       typeof full_name === "string" ? full_name.trim() : "";
     const normalizedStudentId =
       typeof student_id === "string" ? student_id.trim() : "";
-    const normalizedCourse =
-      typeof course === "string" ? course.trim() : "";
+    const normalizedCourse = typeof course === "string" ? course.trim() : "";
     const normalizedDepartment =
       typeof department === "string" ? department.trim() : "";
-    const noOrganization = no_organization === true;
 
     if (normalizedStudentId.length > MAX_STUDENT_NUMBER_LENGTH) {
       return NextResponse.json(
@@ -46,80 +37,61 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requestedOrganizationIds = Array.isArray(organization_ids)
-      ? Array.from(
-          new Set(
-            organization_ids
-              .filter((value): value is string => typeof value === "string")
-              .map((value) => value.trim())
-              .filter(Boolean),
-          ),
-        )
-      : [];
-    const hasOnlyStringIds =
-      Array.isArray(organization_ids) &&
-      requestedOrganizationIds.length === organization_ids.length;
-    const selectedOrganizations = hasOnlyStringIds
-      ? await getOrganizations(requestedOrganizationIds)
-      : [];
-    const organizationIds = selectedOrganizations.map(
-      (organization) => organization.value,
-    );
-
     if (
       !normalizedFullName ||
       !normalizedStudentId ||
       !normalizedCourse ||
-      !normalizedDepartment ||
-      (organizationIds.length === 0 && !noOrganization) ||
-      (organizationIds.length > 0 && noOrganization) ||
-      organizationIds.length > MAX_MEMBER_ORGANIZATIONS ||
-      organizationIds.length !== requestedOrganizationIds.length
+      !normalizedDepartment
     ) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const tableName = process.env.DYNAMODB_TABLE_NAME;
-    if (!tableName) {
+    if (!process.env.DYNAMODB_TABLE_NAME) {
       return NextResponse.json(
         { error: "Server configuration error: missing table configuration" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    const result = await createMember({
-      full_name: normalizedFullName,
-      student_id: normalizedStudentId,
+    const result = await registerMemberForUser({
+      cognitoSub: user.sub,
+      fullName: normalizedFullName,
+      studentId: normalizedStudentId,
       course: normalizedCourse,
       department: normalizedDepartment,
-      current_organization: "",
-    }, organizationIds);
+    });
 
-    if (result.status === "already-exists") {
+    if (result.status === "already-linked") {
       return NextResponse.json(
-        { error: "This student number is already registered" },
-        { status: 409 }
+        {
+          error:
+            result.reason === "account"
+              ? "This account is already registered"
+              : "This student number is already registered to another account",
+        },
+        { status: 409 },
       );
     }
 
     return NextResponse.json(
       {
         success: true,
-        student_id: normalizedStudentId,
-        organization_ids: organizationIds,
-        organizations: selectedOrganizations,
-        current_organization: "",
+        student_id: result.member.student_id,
+        full_name: result.member.full_name,
+        course: result.member.course,
+        department: result.member.department,
+        current_organization: result.member.current_organization,
       },
-      { status: 201 }
+      { status: result.status === "created" ? 201 : 200 },
     );
   } catch (error) {
     console.error("Error in POST /api/forms:", error);
     return NextResponse.json(
       { error: "Failed to register member" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

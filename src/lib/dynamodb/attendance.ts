@@ -1,28 +1,21 @@
 import {
-  GetCommand,
+  PutCommand,
   QueryCommand,
-  TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
-import {
-  getMember,
-  getMembers,
-  isMemberOfOrganization,
-} from "@/lib/dynamodb/members";
+import { getMember, getMembers } from "@/lib/dynamodb/members";
 import { formatAttendanceClockTime } from "@/lib/scan-time";
 import {
   eventItemKey,
   memberItemKey,
-  organizationItemKey,
   studentIdFromMemberKey,
 } from "@/store/dynamodb-keys";
 
 export type CheckInResult =
-  | { status: "created" }
   | { status: "already-checked-in" }
-  | { status: "member-not-found" }
-  | { status: "not-member" };
+  | { status: "created" }
+  | { status: "member-not-found" };
 
 export type LeaveResult =
   | { status: "updated" }
@@ -57,67 +50,29 @@ export async function checkIn(
   }
 
   const memberOrganization = member.current_organization.trim();
-
-  if (
-    memberOrganization &&
-    !(await isMemberOfOrganization(studentId, memberOrganization))
-  ) {
-    return { status: "not-member" };
-  }
-
   const now = new Date();
   const scannedAt = attendance?.scannedAt ?? formatAttendanceClockTime(now);
   const timestamp = attendance?.timestamp ?? now.getTime();
 
   try {
     await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          ...(memberOrganization
-            ? [
-                {
-                  ConditionCheck: {
-                    TableName: tableName(),
-                    Key: {
-                      PK: organizationItemKey(memberOrganization),
-                      SK: memberSK,
-                    },
-                    ConditionExpression:
-                      "attribute_exists(PK) AND attribute_exists(SK)",
-                  },
-                },
-              ]
-            : []),
-          {
-            Put: {
-              TableName: tableName(),
-              Item: {
-                PK: eventPK,
-                SK: memberSK,
-                member_organization: memberOrganization,
-                scannedAt,
-                timestamp,
-              },
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-        ],
+      new PutCommand({
+        TableName: tableName(),
+        Item: {
+          PK: eventPK,
+          SK: memberSK,
+          member_organization: memberOrganization,
+          scannedAt,
+          timestamp,
+        },
+        ConditionExpression: "attribute_not_exists(PK)",
       }),
     );
 
     return { status: "created" };
   } catch (error: unknown) {
-    if (isTransactionCanceled(error)) {
-      const existing = await dynamodb.send(
-        new GetCommand({
-          TableName: tableName(),
-          Key: { PK: eventPK, SK: memberSK },
-          ProjectionExpression: "PK, SK",
-        }),
-      );
-      return existing.Item
-        ? { status: "already-checked-in" }
-        : { status: "not-member" };
+    if (isConditionalCheckFailed(error)) {
+      return { status: "already-checked-in" };
     }
 
     throw error;
@@ -248,11 +203,3 @@ function isConditionalCheckFailed(error: unknown): boolean {
   );
 }
 
-function isTransactionCanceled(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: string }).name === "TransactionCanceledException"
-  );
-}

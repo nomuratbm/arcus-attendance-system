@@ -3,11 +3,9 @@
 import {
   Fragment,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
-import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,13 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToastProvider, toastManager } from "@/components/ui/toast";
-import { useQrCode } from "@/hooks/use-qr-code";
+import { toastManager } from "@/components/ui/toast";
 import { departmentCampuses, departmentItems } from "@/lib/departments";
-import {
-  parseOrganizationOptions,
-  type OrganizationOption,
-} from "@/lib/organizations";
 import {
   apiErrorMessage,
   readResponseJson,
@@ -46,9 +39,12 @@ import {
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
 
-type QrMemberContext = {
+export type RegisteredStudent = {
+  course: string;
+  currentOrganization: string;
+  department: string;
+  fullName: string;
   studentId: string;
-  organizations: OrganizationOption[];
 };
 
 const departmentSelectGroups = departmentCampuses.map((group, index) => (
@@ -116,14 +112,14 @@ function DepartmentSelect({
   );
 }
 
-export function StudentDetailsForm() {
+export function StudentDetailsForm({
+  onRegistered,
+}: {
+  onRegistered: (student: RegisteredStudent) => void;
+}) {
   const [formKey, setFormKey] = useState(0);
   const submitting = useStudentFormStore((state) => state.submitting);
   const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
-  const [qrMemberContext, setQrMemberContext] =
-    useState<QrMemberContext | null>(null);
-  const qrRef = useRef<HTMLDivElement>(null);
-  const { dataUrl, generate, clear } = useQrCode();
 
   useEffect(
     () => () => {
@@ -144,7 +140,7 @@ export function StudentDetailsForm() {
       programYear,
       department,
     });
-    const formState = useStudentFormStore.getState();
+    const memberItem = useStudentFormStore.getState().buildMemberItem();
 
     if (!studentName || !studentNumber || !programYear || !department) {
       toastManager.add({
@@ -154,21 +150,6 @@ export function StudentDetailsForm() {
       });
       return;
     }
-
-    if (
-      formState.organizationIds.length === 0 &&
-      !formState.noOrganizationSelected
-    ) {
-      toastManager.add({
-        type: "error",
-        title: "Select an organization option",
-        description:
-          "Choose at least one organization or select No organization.",
-      });
-      return;
-    }
-
-    const memberItem = formState.buildMemberItem();
 
     setSubmitting(true);
     try {
@@ -180,34 +161,54 @@ export function StudentDetailsForm() {
           student_id: memberItem.student_id,
           course: memberItem.course,
           department: memberItem.department,
-          organization_ids: formState.organizationIds,
-          no_organization: formState.noOrganizationSelected,
         }),
       });
 
       const data = await readResponseJson(response);
 
-      if (response.ok) {
-        const selectedOrganizations = parseOrganizationOptions(data);
-        setQrMemberContext({
-          studentId: memberItem.student_id,
-          organizations: selectedOrganizations,
-        });
-        await generate(memberItem.student_id);
+      if (response.ok && data && typeof data === "object") {
+        const studentId =
+          "student_id" in data && typeof data.student_id === "string"
+            ? data.student_id
+            : memberItem.student_id;
+        const fullName =
+          "full_name" in data && typeof data.full_name === "string"
+            ? data.full_name
+            : memberItem.full_name;
+        const course =
+          "course" in data && typeof data.course === "string"
+            ? data.course
+            : memberItem.course;
+        const savedDepartment =
+          "department" in data && typeof data.department === "string"
+            ? data.department
+            : memberItem.department;
+        const currentOrganization =
+          "current_organization" in data &&
+          typeof data.current_organization === "string"
+            ? data.current_organization
+            : "";
+
         toastManager.add({
           type: "success",
           title: "Student registered",
-          description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
+          description: `${fullName} · ${studentId} · ${course} · ${savedDepartment}`,
         });
-        setTimeout(() => {
-          qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }, 100);
+        onRegistered({
+          course,
+          currentOrganization,
+          department: savedDepartment,
+          fullName,
+          studentId,
+        });
       } else if (response.status === 409) {
         toastManager.add({
           type: "error",
           title: "Already registered",
-          description:
-            "This student number is already registered. Use Retrieve to get your QR code.",
+          description: apiErrorMessage(
+            data,
+            "This student number is already registered to another account.",
+          ),
         });
       } else {
         toastManager.add({
@@ -235,14 +236,11 @@ export function StudentDetailsForm() {
 
   function handleClear() {
     useStudentFormStore.getState().clearFormData();
-    clear();
-    setQrMemberContext(null);
     setFormKey((current) => current + 1);
   }
 
   return (
-    <ToastProvider position="bottom-right">
-      <Card aria-busy={submitting} className="relative w-full">
+    <Card aria-busy={submitting} className="relative w-full">
         {submitting ? (
           <AsyncLoadingOverlay label="Registering student..." />
         ) : null}
@@ -328,16 +326,6 @@ export function StudentDetailsForm() {
           </CardFooter>
           </Fieldset>
         </Form>
-        {dataUrl && qrMemberContext ? (
-          <QrCodePreview
-            key={qrMemberContext.studentId}
-            dataUrl={dataUrl}
-            organizations={qrMemberContext.organizations}
-            ref={qrRef}
-            studentId={qrMemberContext.studentId}
-          />
-        ) : null}
-      </Card>
-    </ToastProvider>
+    </Card>
   );
 }

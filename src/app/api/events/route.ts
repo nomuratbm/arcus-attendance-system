@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import {
+  organizationScopeError,
+  rejectForeignOrganization,
+} from "@/lib/auth/organization-scope";
+import { requireAdminUser } from "@/lib/auth/session";
 import { createEvent, getEvents } from "@/lib/dynamodb/events";
 import { getOrganization } from "@/lib/dynamodb/organizations";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const unauthorized = await requireAdminApi();
-  if (unauthorized) {
-    return unauthorized;
+  const user = await requireAdminUser();
+  if (user instanceof NextResponse) {
+    return user;
   }
 
   try {
@@ -19,8 +23,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const organization =
+    const missingOrganization = organizationScopeError(user);
+    if (missingOrganization) {
+      return missingOrganization;
+    }
+
+    const requestedOrganization =
       request.nextUrl.searchParams.get("organization")?.trim() ?? "";
+    const organization = user.isSuperAdmin
+      ? requestedOrganization
+      : (user.organizationId ?? "");
 
     if (organization && !(await getOrganization(organization))) {
       return NextResponse.json(
@@ -44,9 +56,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const unauthorized = await requireAdminApi();
-  if (unauthorized) {
-    return unauthorized;
+  const user = await requireAdminUser();
+  if (user instanceof NextResponse) {
+    return user;
   }
 
   try {
@@ -54,8 +66,23 @@ export async function POST(request: NextRequest) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const description =
       typeof body.description === "string" ? body.description.trim() : "";
-    const organization =
+    const requestedOrganization =
       typeof body.organization === "string" ? body.organization.trim() : "";
+    const missingOrganization = organizationScopeError(user);
+    if (missingOrganization) {
+      return missingOrganization;
+    }
+
+    const denied = user.isSuperAdmin
+      ? null
+      : rejectForeignOrganization(user, requestedOrganization);
+    if (denied) {
+      return denied;
+    }
+
+    const organization = user.isSuperAdmin
+      ? requestedOrganization
+      : (user.organizationId ?? "");
 
     if (!name || !description || !organization) {
       return NextResponse.json(

@@ -59,7 +59,11 @@ type EventSelectItem = {
   value: string;
 };
 
-export function EventSelector() {
+export function EventSelector({
+  lockedOrganizationId = null,
+}: {
+  lockedOrganizationId?: string | null;
+}) {
   const events = useEventsStore((state) => state.events);
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const selectedOrganizationId = useEventsStore(
@@ -99,11 +103,16 @@ export function EventSelector() {
     ) ?? null;
 
   useEffect(() => {
-    setSelectedEventPK(null);
-    setSelectedOrganizationId(null);
+    if (lockedOrganizationId) {
+      setSelectedOrganizationId(lockedOrganizationId);
+    } else {
+      setSelectedEventPK(null);
+      setSelectedOrganizationId(null);
+    }
     void loadOrganizations();
   }, [
     loadOrganizations,
+    lockedOrganizationId,
     setSelectedEventPK,
     setSelectedOrganizationId,
   ]);
@@ -191,7 +200,11 @@ export function EventSelector() {
         <CardPanel className="flex flex-col gap-4">
           <Field className="w-full">
             <FieldLabel>Organization</FieldLabel>
-            {organizationsLoading ? (
+            {lockedOrganizationId ? (
+              <p className="text-sm text-foreground">
+                {selectedOrganization?.label ?? "Your organization"}
+              </p>
+            ) : organizationsLoading ? (
               <Skeleton
                 aria-label="Loading organizations"
                 className="h-9 w-full"
@@ -243,6 +256,8 @@ export function EventSelector() {
                     Retry
                   </Button>
                 </span>
+              ) : lockedOrganizationId ? (
+                "Events are listed only for your organization."
               ) : (
                 "Events are listed only for the selected organization."
               )}

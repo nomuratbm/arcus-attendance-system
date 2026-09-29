@@ -16,6 +16,7 @@ import {
   organizationIdFromKey,
   organizationItemKey,
   studentIdFromMemberKey,
+  userItemKey,
 } from "@/store/dynamodb-keys";
 import { type Member } from "@/store/member-item";
 
@@ -23,27 +24,60 @@ export type { Member };
 
 export const MAX_MEMBER_ORGANIZATIONS = 99;
 
-export type MemberDetails = Omit<Member, "PK" | "SK">;
+export type RegisterMemberResult =
+  | { member: Member; status: "created" | "linked" }
+  | { reason: "account" | "student-number"; status: "already-linked" };
 
-export type CreateMemberResult =
-  | { status: "created" }
-  | { status: "already-exists" };
+export async function registerMemberForUser(input: {
+  cognitoSub: string;
+  course: string;
+  department: string;
+  fullName: string;
+  studentId: string;
+}): Promise<RegisterMemberResult> {
+  const cognitoSub = input.cognitoSub.trim();
+  const studentId = input.studentId.trim();
+  const linked = await getMemberForUser(cognitoSub);
 
-export async function createMember(
-  details: MemberDetails,
-  organizationIds: string[],
-): Promise<CreateMemberResult> {
-  const studentId = details.student_id.trim();
-  const key = memberItemKey(studentId);
-  const uniqueOrganizationIds = Array.from(
-    new Set(organizationIds.map((value) => value.trim()).filter(Boolean)),
-  );
+  if (linked) {
+    if (linked.student_id === studentId) {
+      return { member: linked, status: "linked" };
+    }
 
-  if (uniqueOrganizationIds.length > MAX_MEMBER_ORGANIZATIONS) {
-    throw new Error(
-      `A member cannot select more than ${MAX_MEMBER_ORGANIZATIONS} organizations`,
-    );
+    return { reason: "account", status: "already-linked" };
   }
+
+  const existing = await getMember(studentId);
+  if (existing?.cognito_sub && existing.cognito_sub !== cognitoSub) {
+    return { reason: "student-number", status: "already-linked" };
+  }
+
+  if (existing?.cognito_sub === cognitoSub) {
+    return { member: existing, status: "linked" };
+  }
+
+  if (existing) {
+    return claimExistingMember(existing, cognitoSub);
+  }
+
+  return createLinkedMember({
+    cognitoSub,
+    course: input.course.trim(),
+    department: input.department.trim(),
+    fullName: input.fullName.trim(),
+    studentId,
+  });
+}
+
+async function createLinkedMember(input: {
+  cognitoSub: string;
+  course: string;
+  department: string;
+  fullName: string;
+  studentId: string;
+}): Promise<RegisterMemberResult> {
+  const memberKey = memberItemKey(input.studentId);
+  const userKey = userItemKey(input.cognitoSub);
 
   try {
     await dynamodb.send(
@@ -53,43 +87,132 @@ export async function createMember(
             Put: {
               TableName: tableName(),
               Item: {
-                PK: key,
-                SK: key,
-                ...details,
-                student_id: studentId,
+                PK: memberKey,
+                SK: memberKey,
+                full_name: input.fullName,
+                student_id: input.studentId,
+                course: input.course,
+                department: input.department,
                 current_organization: "",
+                cognito_sub: input.cognitoSub,
               },
               ConditionExpression: "attribute_not_exists(PK)",
             },
           },
-          ...uniqueOrganizationIds.map((organizationId) => ({
+          {
             Put: {
               TableName: tableName(),
               Item: {
-                PK: organizationItemKey(organizationId),
-                SK: key,
-                organization_id: organizationId,
-                student_id: studentId,
+                PK: userKey,
+                SK: userKey,
+                cognito_sub: input.cognitoSub,
+                student_id: input.studentId,
               },
-              ConditionExpression:
-                "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+              ConditionExpression: "attribute_not_exists(PK)",
             },
-          })),
+          },
         ],
       }),
     );
-
-    return { status: "created" };
   } catch (error: unknown) {
-    if (
-      isConditionalCheckFailed(error) ||
-      (isTransactionCanceled(error) && (await getMember(studentId)) !== null)
-    ) {
-      return { status: "already-exists" };
+    if (!isTransactionCanceled(error)) {
+      throw error;
     }
 
-    throw error;
+    const existing = await getMember(input.studentId);
+    if (existing && !existing.cognito_sub) {
+      return claimExistingMember(existing, input.cognitoSub);
+    }
+
+    return classifyRegistrationConflict(input.cognitoSub, input.studentId);
   }
+
+  const member = await getMember(input.studentId);
+  if (!member) {
+    throw new Error("Member was created but could not be read");
+  }
+
+  return { member, status: "created" };
+}
+
+async function claimExistingMember(
+  member: Member,
+  cognitoSub: string,
+): Promise<RegisterMemberResult> {
+  const userKey = userItemKey(cognitoSub);
+
+  try {
+    await dynamodb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: tableName(),
+              Key: {
+                PK: member.PK,
+                SK: member.SK,
+              },
+              UpdateExpression: "SET cognito_sub = :sub",
+              ConditionExpression:
+                "attribute_exists(PK) AND (attribute_not_exists(cognito_sub) OR cognito_sub = :empty)",
+              ExpressionAttributeValues: {
+                ":empty": "",
+                ":sub": cognitoSub,
+              },
+            },
+          },
+          {
+            Put: {
+              TableName: tableName(),
+              Item: {
+                PK: userKey,
+                SK: userKey,
+                cognito_sub: cognitoSub,
+                student_id: member.student_id,
+              },
+              ConditionExpression: "attribute_not_exists(PK)",
+            },
+          },
+        ],
+      }),
+    );
+  } catch (error: unknown) {
+    if (!isTransactionCanceled(error)) {
+      throw error;
+    }
+
+    return classifyRegistrationConflict(cognitoSub, member.student_id);
+  }
+
+  return {
+    member: { ...member, cognito_sub: cognitoSub },
+    status: "linked",
+  };
+}
+
+async function classifyRegistrationConflict(
+  cognitoSub: string,
+  studentId: string,
+): Promise<RegisterMemberResult> {
+  const linked = await getMemberForUser(cognitoSub);
+  if (linked?.student_id === studentId) {
+    return { member: linked, status: "linked" };
+  }
+
+  if (linked) {
+    return { reason: "account", status: "already-linked" };
+  }
+
+  const existing = await getMember(studentId);
+  if (existing?.cognito_sub === cognitoSub) {
+    return { member: existing, status: "linked" };
+  }
+
+  if (existing?.cognito_sub) {
+    return { reason: "student-number", status: "already-linked" };
+  }
+
+  throw new Error("Member registration conflict could not be resolved");
 }
 
 export async function getMember(studentId: string): Promise<Member | null> {
@@ -109,6 +232,40 @@ export async function getMember(studentId: string): Promise<Member | null> {
   }
 
   return null;
+}
+
+export async function getMemberForUser(
+  cognitoSub: string,
+): Promise<Member | null> {
+  const sub = cognitoSub.trim();
+  if (!sub) {
+    return null;
+  }
+
+  const result = await dynamodb.send(
+    new GetCommand({
+      TableName: tableName(),
+      Key: {
+        PK: userItemKey(sub),
+        SK: userItemKey(sub),
+      },
+      ProjectionExpression: "student_id",
+    }),
+  );
+  const studentId =
+    typeof result.Item?.student_id === "string"
+      ? result.Item.student_id.trim()
+      : "";
+  if (!studentId) {
+    return null;
+  }
+
+  const member = await getMember(studentId);
+  if (!member || (member.cognito_sub && member.cognito_sub !== sub)) {
+    return null;
+  }
+
+  return member;
 }
 
 export async function getMemberOrganizationIds(
@@ -162,23 +319,6 @@ export async function getMemberOrganizations(
   return organizations.filter((organization) =>
     found.has(organization.value),
   );
-}
-
-export async function isMemberOfOrganization(
-  studentId: string,
-  organizationId: string,
-): Promise<boolean> {
-  const result = await dynamodb.send(
-    new GetCommand({
-      TableName: tableName(),
-      Key: {
-        PK: organizationItemKey(organizationId),
-        SK: memberItemKey(studentId),
-      },
-      ProjectionExpression: "PK, SK",
-    }),
-  );
-  return Boolean(result.Item);
 }
 
 export type AddMemberOrganizationsResult =
@@ -259,9 +399,9 @@ export async function addMemberOrganizations(
 }
 
 export type UpdateCurrentOrganizationResult =
-  | { status: "updated" }
+  | { status: "organization-not-found" }
   | { status: "member-not-found" }
-  | { status: "not-member" };
+  | { status: "updated" };
 
 export async function updateMemberCurrentOrganization(
   studentId: string,
@@ -272,78 +412,32 @@ export async function updateMemberCurrentOrganization(
     return { status: "member-not-found" };
   }
 
-  if (!organizationId) {
-    try {
-      await dynamodb.send(
-        new UpdateCommand({
-          TableName: tableName(),
-          Key: {
-            PK: memberItemKey(studentId),
-            SK: memberItemKey(studentId),
-          },
-          UpdateExpression: "SET current_organization = :organization",
-          ExpressionAttributeValues: {
-            ":organization": "",
-          },
-          ConditionExpression:
-            "attribute_exists(PK) AND attribute_exists(SK)",
-        }),
-      );
-      return { status: "updated" };
-    } catch (error: unknown) {
-      if (isConditionalCheckFailed(error)) {
-        return { status: "member-not-found" };
-      }
-      throw error;
+  if (organizationId) {
+    const organization = await getOrganization(organizationId);
+    if (!organization) {
+      return { status: "organization-not-found" };
     }
-  }
-
-  const [organization, hasMembership] = await Promise.all([
-    getOrganization(organizationId),
-    isMemberOfOrganization(studentId, organizationId),
-  ]);
-  if (!organization || !hasMembership) {
-    return { status: "not-member" };
   }
 
   try {
     await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: tableName(),
-              Key: {
-                PK: organizationItemKey(organizationId),
-                SK: memberItemKey(studentId),
-              },
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_exists(SK)",
-            },
-          },
-          {
-            Update: {
-              TableName: tableName(),
-              Key: {
-                PK: memberItemKey(studentId),
-                SK: memberItemKey(studentId),
-              },
-              UpdateExpression: "SET current_organization = :organization",
-              ExpressionAttributeValues: {
-                ":organization": organizationId,
-              },
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_exists(SK)",
-            },
-          },
-        ],
+      new UpdateCommand({
+        TableName: tableName(),
+        Key: {
+          PK: memberItemKey(studentId),
+          SK: memberItemKey(studentId),
+        },
+        UpdateExpression: "SET current_organization = :organization",
+        ExpressionAttributeValues: {
+          ":organization": organizationId,
+        },
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
       }),
     );
-
     return { status: "updated" };
   } catch (error: unknown) {
-    if (isTransactionCanceled(error)) {
-      return { status: "not-member" };
+    if (isConditionalCheckFailed(error)) {
+      return { status: "member-not-found" };
     }
     throw error;
   }
@@ -441,6 +535,7 @@ function memberFromRecord(item: Record<string, unknown>): Member | null {
       typeof item.current_organization === "string"
         ? item.current_organization
         : "",
+    cognito_sub: typeof item.cognito_sub === "string" ? item.cognito_sub : "",
   };
 }
 

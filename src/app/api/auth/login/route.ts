@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  sessionReturnPath,
   createPkce,
   createRandomValue,
   getAuthorizeUrl,
@@ -18,11 +19,8 @@ export async function GET(request: NextRequest) {
   const verified = await verifyAccessCookie();
 
   if (verified.status === "ok") {
-    return NextResponse.redirect(new URL(nextPath, request.url));
-  }
-
-  if (verified.status === "forbidden") {
-    return NextResponse.redirect(new URL("/forbidden", request.url));
+    const destination = sessionReturnPath(nextPath, verified.user);
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
   const { challenge, verifier } = createPkce();

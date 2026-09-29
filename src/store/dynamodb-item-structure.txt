@@ -12,10 +12,13 @@ student_id: string       // form field: studentNumber (same value as the key)
 course: string           // form field: programYear
 department: string
 current_organization: uuid | "" // empty means no organization represented
+cognito_sub: string      // Cognito user sub that owns this member
 
-Registration creates this item and its Organization Member items in one
-transaction. ConditionExpression attribute_not_exists(PK) ensures that a
-student number can only be registered once.
+Registration creates this item and a USER item in one transaction. It does
+not create Organization Member items. ConditionExpression
+attribute_not_exists(PK) ensures that a student number can only be registered
+once. An existing member with no cognito_sub can be claimed by the signed-in
+user, which sets cognito_sub and writes the USER item.
 
 Example item:
 
@@ -26,11 +29,34 @@ Example item:
   "student_id": "2024105858",
   "course": "CS-3",
   "department": "College of Computer Studies",
-  "current_organization": "d0f409ec-9be8-4387-b814-8a5eed2cac8a"
+  "current_organization": "d0f409ec-9be8-4387-b814-8a5eed2cac8a",
+  "cognito_sub": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 }
 
 QR code encodes the raw student_id. Scan looks up this Member item by
-PK MEMBER#(student_id).
+PK MEMBER#(student_id). The signed-in student home looks up the USER item,
+then this Member item.
+
+--------------------------------------------------------------------------------
+1b. User link
+--------------------------------------------------------------------------------
+
+PK: USER#(cognito_sub)
+SK: USER#(cognito_sub)
+cognito_sub: string
+student_id: string
+
+One Cognito user maps to one student number. GetItem on this key answers
+whether the signed-in user already has a QR profile.
+
+Example item:
+
+{
+  "PK": "USER#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "SK": "USER#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "cognito_sub": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "student_id": "2024105858"
+}
 
 --------------------------------------------------------------------------------
 2. Event  (write from useEventsStore)
@@ -107,9 +133,9 @@ SK: MEMBER#(student_id)
 organization_id: uuid
 student_id: string
 
-The representation selector only accepts organizations for which this
-membership item exists. Updating current_organization and creating attendance
-both condition-check this relationship.
+The representation selector lists every organization in the registry, plus
+"No organization". Updating current_organization checks that the organization
+exists. It does not require an Organization Member item. Check-in stores
+current_organization as member_organization.
 
-Selecting "No organization" stores an empty current_organization and does not
-require an Organization Member item.
+Selecting "No organization" stores an empty current_organization.

@@ -17,8 +17,7 @@ export default function ForbiddenPage() {
           <CardHeader>
             <CardTitle>Admin access required</CardTitle>
             <CardDescription>
-              This account is signed in but is not in the required Cognito admin
-              group.
+              This account does not have access to that page.
             </CardDescription>
           </CardHeader>
           <CardFooter>

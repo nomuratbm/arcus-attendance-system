@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { refreshAccessToken, safeReturnPath } from "@/lib/auth/cognito";
 import {
+  refreshAccessToken,
+  safeReturnPath,
+  sessionReturnPath,
+} from "@/lib/auth/cognito";
+import {
+  applyIdRefreshAttempt,
   applyTokenCookies,
   clearAuthCookies,
   REFRESH_COOKIE,
@@ -23,18 +28,14 @@ export async function GET(request: NextRequest) {
     const tokens = await refreshAccessToken(refreshToken);
     const verified = await verifyAccessToken(tokens.accessToken);
 
-    if (verified.status === "forbidden") {
-      const forbidden = NextResponse.redirect(new URL("/forbidden", request.url));
-      clearAuthCookies(forbidden.cookies);
-      return forbidden;
-    }
-
     if (verified.status !== "ok") {
       throw new Error(`Refreshed access token was ${verified.status}`);
     }
 
-    const response = NextResponse.redirect(new URL(nextPath, request.url));
+    const destination = sessionReturnPath(nextPath, verified.user);
+    const response = NextResponse.redirect(new URL(destination, request.url));
     applyTokenCookies(response.cookies, tokens);
+    applyIdRefreshAttempt(response.cookies, Boolean(tokens.idToken));
     return response;
   } catch (error) {
     console.error("Cognito refresh failed:", error);

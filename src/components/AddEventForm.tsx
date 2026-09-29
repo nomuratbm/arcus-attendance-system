@@ -42,12 +42,17 @@ function eventFromResponse(value: unknown): AttendanceEvent | null {
   return parseAttendanceEvent(value);
 }
 
-export function AddEventForm() {
+export function AddEventForm({
+  lockedOrganizationId = null,
+}: {
+  lockedOrganizationId?: string | null;
+}) {
   const [formKey, setFormKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<
     string | null
-  >(null);
+  >(lockedOrganizationId);
+
   const addEvent = useEventsStore((state) => state.addEvent);
   const organizations = useOrganizationsStore((state) => state.organizations);
   const organizationsError = useOrganizationsStore(
@@ -71,7 +76,7 @@ export function AddEventForm() {
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const name = String(formValues.name ?? "").trim();
     const description = String(formValues.description ?? "").trim();
-    const organization = selectedOrganizationId ?? "";
+    const organization = lockedOrganizationId ?? selectedOrganizationId ?? "";
 
     if (!name || !description) {
       toastManager.add({
@@ -106,7 +111,7 @@ export function AddEventForm() {
 
       if (response.ok && event) {
         addEvent(event);
-        setSelectedOrganizationId(null);
+        setSelectedOrganizationId(lockedOrganizationId);
         toastManager.add({
           type: "success",
           title: "Event added",
@@ -156,7 +161,11 @@ export function AddEventForm() {
           <CardPanel className="flex flex-col gap-4">
             <Field className="w-full" name="organization">
               <FieldLabel>Organization</FieldLabel>
-              {organizationsLoading ? (
+              {lockedOrganizationId ? (
+                <p className="text-sm text-foreground">
+                  {selectedOrganization?.label ?? "Your organization"}
+                </p>
+              ) : organizationsLoading ? (
                 <Skeleton
                   aria-label="Loading organizations"
                   className="h-9 w-full"
@@ -209,7 +218,9 @@ export function AddEventForm() {
                   </Button>
                 </div>
               ) : null}
-              <FieldError>Please select an organization.</FieldError>
+              {lockedOrganizationId ? null : (
+                <FieldError>Please select an organization.</FieldError>
+              )}
             </Field>
 
             <Field className="w-full" name="name">
@@ -237,7 +248,7 @@ export function AddEventForm() {
           <CardFooter className="justify-end gap-2">
             <Button
               disabled={submitting}
-              onClick={() => setSelectedOrganizationId(null)}
+              onClick={() => setSelectedOrganizationId(lockedOrganizationId)}
               type="reset"
               variant="ghost"
             >

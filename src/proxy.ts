@@ -32,5 +32,8 @@ export const config = {
     "/api/checkin/:path*",
     "/api/events",
     "/api/events/:path*",
+    "/",
+    "/api/forms",
+    "/api/forms/:path*",
   ],
 };

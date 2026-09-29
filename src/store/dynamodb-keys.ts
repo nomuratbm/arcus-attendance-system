@@ -1,6 +1,11 @@
 export const EVENT_GSI1PK = "EVENT";
 export const ORGANIZATION_GSI3PK = "ORGANIZATION";
 
+export function userItemKey(cognitoSub: string): string {
+  const value = cognitoSub.trim();
+  return value.startsWith("USER#") ? value : `USER#${value}`;
+}
+
 export function memberItemKey(studentId: string): string {
   const value = studentId.trim();
   return value.startsWith("MEMBER#") ? value : `MEMBER#${value}`;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   exchangeAuthorizationCode,
   safeReturnPath,
+  sessionReturnPath,
 } from "@/lib/auth/cognito";
 import {
   applyTokenCookies,
@@ -52,17 +53,12 @@ export async function GET(request: NextRequest) {
     await verifyIdToken(tokens.idToken, nonce);
     const access = await verifyAccessToken(tokens.accessToken);
 
-    if (access.status === "forbidden") {
-      const forbidden = NextResponse.redirect(new URL("/forbidden", request.url));
-      clearOauthCookies(forbidden.cookies);
-      return forbidden;
-    }
-
     if (access.status !== "ok") {
       throw new Error(`Access token verification failed: ${access.status}`);
     }
 
-    const response = NextResponse.redirect(new URL(nextPath, request.url));
+    const destination = sessionReturnPath(nextPath, access.user);
+    const response = NextResponse.redirect(new URL(destination, request.url));
     clearOauthCookies(response.cookies);
     applyTokenCookies(response.cookies, tokens);
     return response;

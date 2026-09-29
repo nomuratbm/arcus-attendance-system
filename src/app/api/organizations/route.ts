@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { getSessionUser, requireSuperAdminUser } from "@/lib/auth/session";
 import {
   MAX_ORGANIZATION_CSV_BYTES,
   OrganizationCsvError,
@@ -15,9 +15,24 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const user = await getSessionUser();
+    if (user?.isAdmin && !user.isSuperAdmin && !user.organizationId) {
+      return NextResponse.json(
+        { error: "This admin account is not assigned to an organization." },
+        { status: 403 },
+      );
+    }
+
     const organizations = await listOrganizations();
+    const visibleOrganizations =
+      user?.isAdmin && !user.isSuperAdmin
+        ? organizations.filter(
+            (organization) => organization.value === user.organizationId,
+          )
+        : organizations;
+
     return NextResponse.json(
-      { organizations },
+      { organizations: visibleOrganizations },
       { headers: { "Cache-Control": "no-store" }, status: 200 },
     );
   } catch (error) {
@@ -30,8 +45,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const unauthorized = await requireAdminApi();
-  if (unauthorized) {
+  const unauthorized = await requireSuperAdminUser();
+  if (unauthorized instanceof NextResponse) {
     return unauthorized;
   }
 

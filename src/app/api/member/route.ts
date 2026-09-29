@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { requireAdminApi, requireUserApi } from "@/lib/auth/session";
 import {
   addMemberOrganizations,
   getMember,
+  getMemberForUser,
   MAX_MEMBER_ORGANIZATIONS,
   updateMemberCurrentOrganization,
 } from "@/lib/dynamodb/members";
@@ -91,6 +92,11 @@ function readAddOrganizationIds(body: unknown): string[] | null {
 }
 
 export async function PATCH(request: NextRequest) {
+  const user = await requireUserApi();
+  if (user instanceof NextResponse) {
+    return user;
+  }
+
   try {
     const body: unknown = await request.json();
     const studentId = readStudentId(body);
@@ -125,6 +131,11 @@ export async function PATCH(request: NextRequest) {
         { error: "Server configuration error: missing table configuration" },
         { status: 500 },
       );
+    }
+
+    const owner = await getMemberForUser(user.sub);
+    if (!owner || owner.student_id !== studentId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (addOrganizationIds !== null) {
@@ -181,10 +192,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (result.status === "not-member") {
+    if (result.status === "organization-not-found") {
       return NextResponse.json(
-        { error: "Member does not belong to this organization" },
-        { status: 403 },
+        { error: "Organization is not in the registry" },
+        { status: 400 },
       );
     }
 

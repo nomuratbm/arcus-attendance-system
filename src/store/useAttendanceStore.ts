@@ -88,6 +88,7 @@ export function memberFromDynamoItem(
       typeof item.current_organization === "string"
         ? item.current_organization
         : "",
+    cognito_sub: typeof item.cognito_sub === "string" ? item.cognito_sub : "",
   };
 }
 
@@ -131,6 +132,7 @@ export function parseAttendanceRecord(
         typeof raw.current_organization === "string"
           ? raw.current_organization
           : "",
+      cognito_sub: typeof raw.cognito_sub === "string" ? raw.cognito_sub : "",
     },
     member_organization:
       typeof raw.member_organization === "string"

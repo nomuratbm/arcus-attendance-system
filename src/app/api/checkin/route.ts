@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { rejectForeignEvent } from "@/lib/auth/organization-scope";
+import { requireAdminUser } from "@/lib/auth/session";
 import { checkIn, recordLeave } from "@/lib/dynamodb/attendance";
 import { formatAttendanceClockTime } from "@/lib/scan-time";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const unauthorized = await requireAdminApi();
-  if (unauthorized) {
-    return unauthorized;
+  const user = await requireAdminUser();
+  if (user instanceof NextResponse) {
+    return user;
   }
 
   try {
@@ -35,6 +36,11 @@ export async function POST(request: NextRequest) {
         { error: "Server configuration error: missing table configuration" },
         { status: 500 },
       );
+    }
+
+    const denied = await rejectForeignEvent(user, eventId);
+    if (denied) {
+      return denied;
     }
 
     if (mode === "leave") {
@@ -66,13 +72,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Member not registered in the system" },
         { status: 404 },
-      );
-    }
-
-    if (result.status === "not-member") {
-      return NextResponse.json(
-        { error: "Member does not belong to the selected organization" },
-        { status: 403 },
       );
     }
 

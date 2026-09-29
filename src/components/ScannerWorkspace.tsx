@@ -83,7 +83,11 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
   );
 }
 
-export function ScannerWorkspace() {
+export function ScannerWorkspace({
+  lockedOrganizationId = null,
+}: {
+  lockedOrganizationId?: string | null;
+}) {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const selectedOrganizationId = useEventsStore(
     (state) => state.selectedOrganizationId,
@@ -214,7 +218,7 @@ export function ScannerWorkspace() {
 
   return (
     <main className="mx-auto w-full max-w-5xl min-w-0 space-y-6 overflow-x-clip px-4 py-8 sm:px-6">
-      <EventSelector />
+      <EventSelector lockedOrganizationId={lockedOrganizationId} />
       <QRScanner />
       <AttendanceDashboard />
     </main>

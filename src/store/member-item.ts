@@ -6,4 +6,5 @@ export interface Member {
   course: string;
   department: string;
   current_organization: string;
+  cognito_sub: string;
 }

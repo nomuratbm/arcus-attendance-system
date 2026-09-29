@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/session";
+import { rejectForeignEvent } from "@/lib/auth/organization-scope";
+import { requireAdminUser } from "@/lib/auth/session";
 import { listEventCheckIns } from "@/lib/dynamodb/attendance";
 
 export const dynamic = "force-dynamic";
@@ -8,9 +9,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ eventId: string }> },
 ) {
-  const unauthorized = await requireAdminApi();
-  if (unauthorized) {
-    return unauthorized;
+  const user = await requireAdminUser();
+  if (user instanceof NextResponse) {
+    return user;
   }
 
   try {
@@ -28,6 +29,11 @@ export async function GET(
         { error: "Server configuration error: missing table configuration" },
         { status: 500 },
       );
+    }
+
+    const denied = await rejectForeignEvent(user, eventId);
+    if (denied) {
+      return denied;
     }
 
     const checkIns = await listEventCheckIns(eventId);
