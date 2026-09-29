@@ -320,7 +320,8 @@ export function OrganizationsImport() {
           <CardTitle>Organization registry</CardTitle>
           <CardDescription>
             Public organization names currently available to registration and
-            event tools.
+            event tools. Attach the UUID to the organization&apos;s Cognito
+            account.
           </CardDescription>
         </CardHeader>
         <CardPanel>
@@ -346,6 +347,7 @@ export function OrganizationsImport() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>UUID</TableHead>
                   <TableHead className="text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -354,6 +356,9 @@ export function OrganizationsImport() {
                   <TableRow key={organization.value}>
                     <TableCell className="font-medium">
                       {organization.label}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
+                      {organization.value}
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge variant="success">Available</Badge>
@@ -364,7 +369,7 @@ export function OrganizationsImport() {
                   <TableRow>
                     <TableCell
                       className="py-8 text-center text-muted-foreground"
-                      colSpan={2}
+                      colSpan={3}
                     >
                       No organizations found.
                     </TableCell>
@@ -375,6 +380,9 @@ export function OrganizationsImport() {
                       <TableRow key={row}>
                         <TableCell>
                           <Skeleton className="h-4 w-2/3" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-64" />
                         </TableCell>
                         <TableCell>
                           <Skeleton className="ml-auto h-5 w-20" />
