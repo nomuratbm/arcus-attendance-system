@@ -37,7 +37,7 @@ export function getAuthorizeUrl(input: {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
-  url.searchParams.set("scope", "openid email");
+  url.searchParams.set("scope", "openid");
   url.searchParams.set("code_challenge", input.challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", input.state);
