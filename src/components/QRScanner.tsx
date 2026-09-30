@@ -9,6 +9,7 @@ import {
   useAttendanceStore,
 } from "@/store/useAttendanceStore";
 import { useEventsStore } from "@/store/useEventsStore";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +51,7 @@ export function QRScanner() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { setCurrentMember, addAttendanceRecord, updateLeftAt, setScanStatus, setAlert } = useAttendanceStore();
+  const alertMessage = useAttendanceStore((state) => state.alertMessage);
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const canScan = Boolean(selectedEventPK);
 
@@ -106,10 +108,13 @@ export function QRScanner() {
           setCurrentMember(member);
 
           const scanMode = useAttendanceStore.getState().scanTimestampMode;
+          const eventPK = useEventsStore.getState().selectedEventPK;
           const memberSK = member.SK || member.PK;
           const existingRecord = useAttendanceStore
             .getState()
-            .attendanceHistory.find((item) => item.SK === memberSK);
+            .attendanceHistory.find(
+              (item) => item.PK === eventPK && item.SK === memberSK,
+            );
 
           if (scanMode === "leftAt") {
             if (!existingRecord) {
@@ -395,7 +400,12 @@ export function QRScanner() {
           </div>
         </CardHeader>
 
-        <CardContent className="pt-4">
+        <CardContent className="flex flex-col gap-4 pt-4">
+          {alertMessage ? (
+            <Alert variant={alertMessage.type}>
+              <AlertDescription>{alertMessage.message}</AlertDescription>
+            </Alert>
+          ) : null}
           {/* camera box */}
           <div className="relative">
             <div
