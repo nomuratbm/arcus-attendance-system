@@ -36,6 +36,7 @@ export type EventCheckIn = {
   course: string;
   department: string;
   member_organization: string;
+  current_organization: string;
   scannedAt: string;
   leftAt: string;
   timestamp: number;
@@ -187,6 +188,7 @@ export async function listEventCheckIns(
         typeof checkIn.member_organization === "string"
           ? checkIn.member_organization
           : "",
+      current_organization: member?.current_organization ?? "",
       scannedAt: clockValue(checkIn.scannedAt),
       leftAt: clockValue(checkIn.leftAt),
       timestamp: Number.isFinite(timestamp) ? timestamp : 0,

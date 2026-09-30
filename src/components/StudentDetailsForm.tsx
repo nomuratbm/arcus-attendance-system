@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  Fragment,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { QrCodePreview } from "@/components/QrCodePreview";
 import { Button } from "@/components/ui/button";
@@ -17,23 +12,16 @@ import {
   CardPanel,
   CardTitle,
 } from "@/components/ui/card";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldControl, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectGroup,
-  SelectGroupLabel,
-  SelectItem,
-  SelectPopup,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { selectTriggerVariants } from "@/components/ui/select";
+import { ChevronsUpDownIcon } from "lucide-react";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import { useQrCode } from "@/hooks/use-qr-code";
-import { departmentCampuses, departmentItems } from "@/lib/departments";
+import { departmentCampuses } from "@/lib/departments";
+import { cn } from "@/lib/utils";
 import {
   NO_ORGANIZATION_VALUE,
   type OrganizationOption,
@@ -79,40 +67,25 @@ function organizationFromResponse(value: unknown): OrganizationOption | null {
   };
 }
 
-const departmentSelectGroups = departmentCampuses.map((group, index) => (
-  <Fragment key={group.campus}>
-    {index > 0 ? <SelectSeparator /> : null}
-    <SelectGroup>
-      <SelectGroupLabel>{group.campus}</SelectGroupLabel>
-      {group.departments.map((department) => (
-        <SelectItem
-          className="items-start whitespace-normal"
-          key={department}
-          value={department}
-        >
-          {department}
-        </SelectItem>
-      ))}
-    </SelectGroup>
-  </Fragment>
-));
+const departmentChoices = departmentCampuses.map((group) => {
+  const campusName = group.campus.replace(/ Campus$/, "");
 
-function departmentFromSelectValue(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
+  return {
+    campus: group.campus,
+    departments: group.departments.map((department) => {
+      const sharedName = departmentCampuses.some(
+        (other) =>
+          other.campus !== group.campus &&
+          other.departments.some((name) => name === department),
+      );
+      const label = sharedName
+        ? `${department} (${campusName})`
+        : department;
 
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "value" in value &&
-    typeof value.value === "string"
-  ) {
-    return value.value;
-  }
-
-  return "";
-}
+      return { label, value: label };
+    }),
+  };
+});
 
 function DepartmentSelect({
   defaultValue,
@@ -122,25 +95,37 @@ function DepartmentSelect({
   disabled?: boolean;
 }) {
   return (
-    <Select
-      defaultValue={defaultValue || null}
-      disabled={disabled}
-      items={departmentItems}
-      name="department"
-      onValueChange={(value) => {
-        useStudentFormStore.getState().setFormData({
-          department: departmentFromSelectValue(value),
-        });
-      }}
-      required
-    >
-      <SelectTrigger>
-        <SelectValue placeholder="Select department" />
-      </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false}>
-        {departmentSelectGroups}
-      </SelectPopup>
-    </Select>
+    <div className="relative w-full">
+      <FieldControl
+        className={cn(
+          selectTriggerVariants(),
+          "w-full cursor-pointer appearance-none pe-9 pointer-coarse:after:pointer-events-none",
+        )}
+        defaultValue={defaultValue}
+        disabled={disabled}
+        onValueChange={(value) => {
+          useStudentFormStore.getState().setFormData({
+            department: value,
+          });
+        }}
+        render={
+          <select>
+            <option value="">Select department</option>
+            {departmentChoices.map((group) => (
+              <optgroup key={group.campus} label={group.campus}>
+                {group.departments.map((department) => (
+                  <option key={department.value} value={department.value}>
+                    {department.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        }
+        required
+      />
+      <ChevronsUpDownIcon className="pointer-events-none absolute end-2.5 top-1/2 size-4.5 -translate-y-1/2 opacity-80 sm:size-4" />
+    </div>
   );
 }
 

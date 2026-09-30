@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/auth/session";
 import { listEventCheckIns } from "@/lib/dynamodb/attendance";
+import { getOrganizations } from "@/lib/dynamodb/organizations";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,15 @@ export async function GET(
       return NextResponse.json({ checkIns }, { status: 200 });
     }
 
+    const organizationLabels = new Map(
+      (
+        await getOrganizations(
+          checkIns.map((row) => row.current_organization),
+        )
+      ).map((organization) => [organization.value, organization.label]),
+    );
     const header =
-      "SK,full_name,student_id,course,department,member_organization,scannedAt,leftAt,timestamp";
+      "SK,full_name,student_id,course,department,member_organization,current_organization,scannedAt,leftAt,timestamp";
     const rows = checkIns.map((row) =>
       [
         csvEscape(row.SK),
@@ -47,6 +55,10 @@ export async function GET(
         csvEscape(row.course),
         csvEscape(row.department),
         csvEscape(row.member_organization),
+        csvEscape(
+          organizationLabels.get(row.current_organization) ??
+            row.current_organization,
+        ),
         csvEscape(row.scannedAt),
         csvEscape(row.leftAt),
         csvEscape(String(row.timestamp || "")),
