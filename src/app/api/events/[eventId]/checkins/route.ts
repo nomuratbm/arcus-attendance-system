@@ -41,12 +41,12 @@ export async function GET(
     const organizationLabels = new Map(
       (
         await getOrganizations(
-          checkIns.map((row) => row.current_organization),
+          checkIns.map((row) => row.member_organization),
         )
       ).map((organization) => [organization.value, organization.label]),
     );
     const header =
-      "SK,full_name,student_id,course,department,member_organization,current_organization,scannedAt,leftAt,timestamp";
+      "SK,full_name,student_id,course,department,member_organization,org_name,scannedAt,leftAt,timestamp";
     const rows = checkIns.map((row) =>
       [
         csvEscape(row.SK),
@@ -55,10 +55,7 @@ export async function GET(
         csvEscape(row.course),
         csvEscape(row.department),
         csvEscape(row.member_organization),
-        csvEscape(
-          organizationLabels.get(row.current_organization) ??
-            row.current_organization,
-        ),
+        csvEscape(organizationLabels.get(row.member_organization) ?? ""),
         csvEscape(row.scannedAt),
         csvEscape(row.leftAt),
         csvEscape(String(row.timestamp || "")),
