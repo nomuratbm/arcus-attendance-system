@@ -285,9 +285,7 @@ export async function addMemberOrganizations(
 export type UpdateCurrentOrganizationResult =
   | { status: "updated" }
   | { status: "member-not-found" }
-  | { status: "invalid-organization" }
-  | { status: "limit-exceeded" }
-  | { status: "not-member" };
+  | { status: "invalid-organization" };
 
 export async function updateMemberCurrentOrganization(
   studentId: string,
@@ -298,126 +296,36 @@ export async function updateMemberCurrentOrganization(
     return { status: "member-not-found" };
   }
 
+  if (organizationId) {
+    const organization = await getOrganization(organizationId);
+    if (!organization) {
+      return { status: "invalid-organization" };
+    }
+  }
+
   const memberKey = memberItemKey(studentId);
-
-  if (!organizationId) {
-    try {
-      await dynamodb.send(
-        new UpdateCommand({
-          TableName: tableName(),
-          Key: {
-            PK: memberKey,
-            SK: memberKey,
-          },
-          UpdateExpression: "SET current_organization = :organization",
-          ExpressionAttributeValues: {
-            ":organization": "",
-          },
-          ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
-        }),
-      );
-      return { status: "updated" };
-    } catch (error: unknown) {
-      if (isConditionalCheckFailed(error)) {
-        return { status: "member-not-found" };
-      }
-      throw error;
-    }
-  }
-
-  const organization = await getOrganization(organizationId);
-  if (!organization) {
-    return { status: "invalid-organization" };
-  }
-
-  const hasMembership = await isMemberOfOrganization(studentId, organizationId);
-  if (!hasMembership) {
-    const existing = await getMemberOrganizations(studentId);
-    if (existing.length + 1 > MAX_MEMBER_ORGANIZATIONS) {
-      return { status: "limit-exceeded" };
-    }
-  }
 
   try {
     await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          hasMembership
-            ? {
-                ConditionCheck: {
-                  TableName: tableName(),
-                  Key: {
-                    PK: organizationItemKey(organizationId),
-                    SK: memberKey,
-                  },
-                  ConditionExpression:
-                    "attribute_exists(PK) AND attribute_exists(SK)",
-                },
-              }
-            : {
-                Put: {
-                  TableName: tableName(),
-                  Item: {
-                    PK: organizationItemKey(organizationId),
-                    SK: memberKey,
-                    organization_id: organizationId,
-                    student_id: studentId.trim(),
-                  },
-                  ConditionExpression:
-                    "attribute_not_exists(PK) AND attribute_not_exists(SK)",
-                },
-              },
-          {
-            Update: {
-              TableName: tableName(),
-              Key: {
-                PK: memberKey,
-                SK: memberKey,
-              },
-              UpdateExpression: "SET current_organization = :organization",
-              ExpressionAttributeValues: {
-                ":organization": organizationId,
-              },
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_exists(SK)",
-            },
-          },
-        ],
+      new UpdateCommand({
+        TableName: tableName(),
+        Key: {
+          PK: memberKey,
+          SK: memberKey,
+        },
+        UpdateExpression: "SET current_organization = :organization",
+        ExpressionAttributeValues: {
+          ":organization": organizationId,
+        },
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
       }),
     );
-
     return { status: "updated" };
   } catch (error: unknown) {
-    if (!isTransactionCanceled(error)) {
-      throw error;
+    if (isConditionalCheckFailed(error)) {
+      return { status: "member-not-found" };
     }
-
-    if (!(await isMemberOfOrganization(studentId, organizationId))) {
-      return { status: "not-member" };
-    }
-
-    try {
-      await dynamodb.send(
-        new UpdateCommand({
-          TableName: tableName(),
-          Key: {
-            PK: memberKey,
-            SK: memberKey,
-          },
-          UpdateExpression: "SET current_organization = :organization",
-          ExpressionAttributeValues: {
-            ":organization": organizationId,
-          },
-          ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
-        }),
-      );
-      return { status: "updated" };
-    } catch (updateError: unknown) {
-      if (isConditionalCheckFailed(updateError)) {
-        return { status: "member-not-found" };
-      }
-      throw updateError;
-    }
+    throw error;
   }
 }
 

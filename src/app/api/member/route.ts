@@ -188,22 +188,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (result.status === "limit-exceeded") {
-      return NextResponse.json(
-        {
-          error: `A member cannot select more than ${MAX_MEMBER_ORGANIZATIONS} organizations`,
-        },
-        { status: 400 },
-      );
-    }
-
-    if (result.status === "not-member") {
-      return NextResponse.json(
-        { error: "Member does not belong to this organization" },
-        { status: 403 },
-      );
-    }
-
     return NextResponse.json(
       { success: true, current_organization: organizationId },
       { status: 200 },
