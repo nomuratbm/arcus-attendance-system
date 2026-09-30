@@ -15,6 +15,7 @@ export const departmentCampuses = [
       "Department of Mathematics",
       "Department of Physical Education and Athletics",
       "Department of Physics",
+      "SHS (Intramuros)",
     ],
   },
   {
@@ -26,6 +27,7 @@ export const departmentCampuses = [
       "School of Health Sciences",
       "School of Nursing",
       "School of Medicine",
+      "SHS (Makati)",
     ],
   },
   {
