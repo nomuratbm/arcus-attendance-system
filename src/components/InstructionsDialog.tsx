@@ -18,7 +18,7 @@ const INSTRUCTIONS = [
   "Choose one organization to represent, or select No organization.",
   "A QR code is generated from your student number.",
   "Show this QR code at organization/mapua-wide events to mark your attendance.",
-  "If you lose the QR code or want to change your represented organization, register again. Your current profile will be replaced, but past attendance will remain.",
+  "If you already have a QR code, use Retrieve. Registering the same student number again will not create a new QR code.",
 ] as const;
 
 const instructionList = (

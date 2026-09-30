@@ -12,6 +12,15 @@ import {
   CardPanel,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldControl, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
@@ -38,6 +47,20 @@ type QrMemberContext = {
   studentId: string;
   organization: OrganizationOption | null;
 };
+
+type ErrorModal = {
+  title: string;
+  description: string;
+};
+
+function isExistingQrResponse(data: unknown): boolean {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "code" in data &&
+    data.code === "existing-qr"
+  );
+}
 
 function organizationFromResponse(value: unknown): OrganizationOption | null {
   if (
@@ -133,6 +156,7 @@ export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
   const submitting = useStudentFormStore((state) => state.submitting);
   const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
+  const [errorModal, setErrorModal] = useState<ErrorModal | null>(null);
   const [qrMemberContext, setQrMemberContext] =
     useState<QrMemberContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -198,20 +222,28 @@ export function StudentDetailsForm() {
 
       const data = await readResponseJson(response);
 
+      if (response.status === 409 && isExistingQrResponse(data)) {
+        clear();
+        setQrMemberContext(null);
+        setErrorModal({
+          title: "QR code already exists",
+          description: apiErrorMessage(
+            data,
+            "This student number already has a QR code. Use Retrieve to get the existing code.",
+          ),
+        });
+        return;
+      }
+
       if (response.ok) {
         setQrMemberContext({
           studentId: memberItem.student_id,
           organization: organizationFromResponse(data),
         });
         await generate(memberItem.student_id);
-        const wasReplaced =
-          typeof data === "object" &&
-          data !== null &&
-          "status" in data &&
-          data.status === "replaced";
         toastManager.add({
           type: "success",
-          title: wasReplaced ? "Registration replaced" : "Student registered",
+          title: "Student registered",
           description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
         });
         setTimeout(() => {
@@ -346,6 +378,29 @@ export function StudentDetailsForm() {
           />
         ) : null}
       </Card>
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setErrorModal(null);
+          }
+        }}
+        open={errorModal !== null}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>{errorModal?.title ?? "Error"}</DialogTitle>
+            <DialogDescription>
+              {errorModal?.description ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="ghost" />}>
+              OK
+            </DialogClose>
+            <Button render={<a href="/retrieve" />}>Retrieve QR</Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </ToastProvider>
   );
 }

@@ -29,9 +29,8 @@ export type MemberDetails = Omit<
 
 export type RegisterMemberResult =
   | { status: "created" }
-  | { status: "replaced" };
+  | { status: "exists" };
 
-const MAX_TRANSACTION_ITEMS = 100;
 const MAX_REGISTRATION_ATTEMPTS = 3;
 export const MAX_MEMBER_ORGANIZATIONS = 99;
 
@@ -45,25 +44,15 @@ export async function registerMember(
 
   for (let attempt = 0; attempt < MAX_REGISTRATION_ATTEMPTS; attempt += 1) {
     const existingMember = await getMember(studentId);
-    const existingOrganizationIds = existingMember
-      ? await getMemberOrganizationIds(studentId)
-      : [];
     const plan = planMemberRegistration(
       existingMember?.registration_version ?? null,
-      existingOrganizationIds,
       selectedOrganizationId,
     );
 
-    const fixedItemCount = selectedOrganizationId ? 2 : 1;
-    const transactionalStaleOrganizationIds =
-      plan.staleOrganizationIds.slice(
-        0,
-        MAX_TRANSACTION_ITEMS - fixedItemCount,
-      );
-    const deferredStaleOrganizationIds =
-      plan.staleOrganizationIds.slice(
-        MAX_TRANSACTION_ITEMS - fixedItemCount,
-      );
+    if (plan.status === "exists") {
+      return { status: "exists" };
+    }
+
     const memberPut = {
       TableName: tableName(),
       Item: {
@@ -74,28 +63,7 @@ export async function registerMember(
         current_organization: plan.currentOrganization,
         registration_version: plan.registrationVersion,
       },
-      ...(existingMember
-        ? existingMember.registration_version > 0
-          ? {
-              ConditionExpression:
-                "attribute_exists(PK) AND #registrationVersion = :expectedVersion",
-              ExpressionAttributeNames: {
-                "#registrationVersion": "registration_version",
-              },
-              ExpressionAttributeValues: {
-                ":expectedVersion": existingMember.registration_version,
-              },
-            }
-          : {
-              ConditionExpression:
-                "attribute_exists(PK) AND attribute_not_exists(#registrationVersion)",
-              ExpressionAttributeNames: {
-                "#registrationVersion": "registration_version",
-              },
-            }
-        : {
-            ConditionExpression: "attribute_not_exists(PK)",
-          }),
+      ConditionExpression: "attribute_not_exists(PK)",
     };
 
     try {
@@ -120,36 +88,21 @@ export async function registerMember(
                   },
                 ]
               : []),
-            ...transactionalStaleOrganizationIds.map(
-              (staleOrganizationId) => ({
-                Delete: {
-                  TableName: tableName(),
-                  Key: {
-                    PK: organizationItemKey(staleOrganizationId),
-                    SK: key,
-                  },
-                },
-              }),
-            ),
           ],
         }),
       );
 
-      if (deferredStaleOrganizationIds.length > 0) {
-        await deleteOrganizationMemberships(
-          studentId,
-          deferredStaleOrganizationIds,
-          plan.registrationVersion,
-        );
-      }
-
-      return { status: plan.status };
+      return { status: "created" };
     } catch (error: unknown) {
-      if (
-        isTransactionCanceled(error) &&
-        attempt + 1 < MAX_REGISTRATION_ATTEMPTS
-      ) {
-        continue;
+      if (isTransactionCanceled(error)) {
+        const memberNow = await getMember(studentId);
+        if (memberNow) {
+          return { status: "exists" };
+        }
+
+        if (attempt + 1 < MAX_REGISTRATION_ATTEMPTS) {
+          continue;
+        }
       }
 
       throw error;
@@ -157,57 +110,8 @@ export async function registerMember(
   }
 
   throw new Error(
-    `Could not replace registration for student ${studentId} after concurrent updates`,
+    `Could not register student ${studentId} after concurrent updates`,
   );
-}
-
-async function deleteOrganizationMemberships(
-  studentId: string,
-  organizationIds: string[],
-  registrationVersion: number,
-): Promise<void> {
-  const memberKey = memberItemKey(studentId);
-
-  for (let offset = 0; offset < organizationIds.length; offset += 99) {
-    try {
-      await dynamodb.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              ConditionCheck: {
-                TableName: tableName(),
-                Key: { PK: memberKey, SK: memberKey },
-                ConditionExpression:
-                  "#registrationVersion = :registrationVersion",
-                ExpressionAttributeNames: {
-                  "#registrationVersion": "registration_version",
-                },
-                ExpressionAttributeValues: {
-                  ":registrationVersion": registrationVersion,
-                },
-              },
-            },
-            ...organizationIds
-              .slice(offset, offset + 99)
-              .map((staleOrganizationId) => ({
-                Delete: {
-                  TableName: tableName(),
-                  Key: {
-                    PK: organizationItemKey(staleOrganizationId),
-                    SK: memberKey,
-                  },
-                },
-              })),
-          ],
-        }),
-      );
-    } catch (error: unknown) {
-      if (isTransactionCanceled(error)) {
-        return;
-      }
-      throw error;
-    }
-  }
 }
 
 export async function getMember(studentId: string): Promise<Member | null> {

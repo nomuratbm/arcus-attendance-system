@@ -64,6 +64,17 @@ export async function POST(request: NextRequest) {
       organizationId,
     );
 
+    if (result.status === "exists") {
+      return NextResponse.json(
+        {
+          error:
+            "This student number already has a QR code. Use Retrieve to get the existing code.",
+          code: "existing-qr",
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       {
         success: true,

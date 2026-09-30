@@ -1,11 +1,13 @@
 import { MAX_STUDENT_NUMBER_LENGTH } from "./students.ts";
 
-export type MemberRegistrationPlan = {
-  status: "created" | "replaced";
-  currentOrganization: string;
-  staleOrganizationIds: string[];
-  registrationVersion: number;
-};
+export type MemberRegistrationPlan =
+  | {
+      status: "created";
+      currentOrganization: string;
+      staleOrganizationIds: string[];
+      registrationVersion: number;
+    }
+  | { status: "exists" };
 
 export type MemberRegistrationInput = {
   fullName: string;
@@ -72,26 +74,16 @@ export function parseMemberRegistrationInput(
 
 export function planMemberRegistration(
   existingRegistrationVersion: number | null,
-  existingOrganizationIds: string[],
   selectedOrganizationId: string,
 ): MemberRegistrationPlan {
-  const currentOrganization = selectedOrganizationId.trim();
-  const staleOrganizationIds = Array.from(
-    new Set(
-      existingOrganizationIds
-        .map((organizationId) => organizationId.trim())
-        .filter(
-          (organizationId) =>
-            organizationId && organizationId !== currentOrganization,
-        ),
-    ),
-  );
+  if (existingRegistrationVersion !== null) {
+    return { status: "exists" };
+  }
 
   return {
-    status:
-      existingRegistrationVersion === null ? "created" : "replaced",
-    currentOrganization,
-    staleOrganizationIds,
-    registrationVersion: (existingRegistrationVersion ?? 0) + 1,
+    status: "created",
+    currentOrganization: selectedOrganizationId.trim(),
+    staleOrganizationIds: [],
+    registrationVersion: 1,
   };
 }
