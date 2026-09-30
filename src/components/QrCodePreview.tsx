@@ -88,6 +88,7 @@ export function QrCodePreview({
   return (
     <OrganizationQrCodePreview
       allowAddOrganizations={allowAddOrganizations}
+      currentOrganization={organization?.value ?? ""}
       dataUrl={dataUrl}
       organizations={organizations}
       ref={ref}
@@ -134,23 +135,30 @@ function StaticQrCodePreview({
   );
 }
 
+function representedOrganizationValue(organizationId: string): string {
+  const value = organizationId.trim();
+  return value || NO_ORGANIZATION_VALUE;
+}
+
 function OrganizationQrCodePreview({
   dataUrl,
   studentId,
   organizations,
+  currentOrganization,
   allowAddOrganizations,
   ref,
 }: {
   dataUrl: string;
   studentId: string;
   organizations: OrganizationOption[];
+  currentOrganization: string;
   allowAddOrganizations: boolean;
   ref?: Ref<HTMLDivElement>;
 }) {
   const [memberOrganizations, setMemberOrganizations] = useState(organizations);
-  const [selectedOrganization, setSelectedOrganization] = useState<
-    string | null
-  >(null);
+  const [selectedOrganization, setSelectedOrganization] = useState(() =>
+    representedOrganizationValue(currentOrganization),
+  );
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addOpen, setAddOpen] = useState(false);

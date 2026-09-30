@@ -44,6 +44,7 @@ type ErrorModal = {
 
 type QrMemberContext = {
   studentId: string;
+  organization: OrganizationOption | null;
   organizations: OrganizationOption[];
 };
 
@@ -100,6 +101,7 @@ export function RetrieveQrForm() {
       }
 
       const organizations = parseOrganizationOptions(data);
+      const currentOrganizationId = readCurrentOrganization(data);
       const url = await generate(studentNumber);
       if (!url) {
         setErrorModal({
@@ -112,6 +114,11 @@ export function RetrieveQrForm() {
 
       setQrMemberContext({
         studentId: studentNumber,
+        organization:
+          organizations.find((item) => item.value === currentOrganizationId) ??
+          (currentOrganizationId
+            ? { label: currentOrganizationId, value: currentOrganizationId }
+            : null),
         organizations,
       });
 
@@ -192,6 +199,7 @@ export function RetrieveQrForm() {
             key={qrMemberContext.studentId}
             allowAddOrganizations
             dataUrl={dataUrl}
+            organization={qrMemberContext.organization}
             organizations={qrMemberContext.organizations}
             ref={qrRef}
             studentId={qrMemberContext.studentId}
@@ -221,4 +229,17 @@ export function RetrieveQrForm() {
       </Dialog>
     </>
   );
+}
+
+function readCurrentOrganization(data: unknown): string {
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("current_organization" in data) ||
+    typeof data.current_organization !== "string"
+  ) {
+    return "";
+  }
+
+  return data.current_organization.trim();
 }
