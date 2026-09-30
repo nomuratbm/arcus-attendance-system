@@ -2,9 +2,14 @@ import {
   BatchGetCommand,
   GetCommand,
   TransactWriteCommand,
+  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
-import { listOrganizations } from "@/lib/dynamodb/organizations";
+import {
+  getOrganization,
+  getOrganizations,
+  listOrganizations,
+} from "@/lib/dynamodb/organizations";
 import { planMemberRegistration } from "@/lib/member-registration";
 import type { OrganizationOption } from "@/lib/organizations";
 import {
@@ -28,6 +33,7 @@ export type RegisterMemberResult =
 
 const MAX_TRANSACTION_ITEMS = 100;
 const MAX_REGISTRATION_ATTEMPTS = 3;
+export const MAX_MEMBER_ORGANIZATIONS = 99;
 
 export async function registerMember(
   details: MemberDetails,
@@ -293,6 +299,224 @@ export async function isMemberOfOrganization(
   return Boolean(result.Item);
 }
 
+export type AddMemberOrganizationsResult =
+  | { status: "added"; organizations: OrganizationOption[] }
+  | { status: "member-not-found" }
+  | { status: "invalid-organizations" }
+  | { status: "limit-exceeded" };
+
+export async function addMemberOrganizations(
+  studentId: string,
+  organizationIds: string[],
+): Promise<AddMemberOrganizationsResult> {
+  const member = await getMember(studentId);
+  if (!member) {
+    return { status: "member-not-found" };
+  }
+
+  const requestedIds = Array.from(
+    new Set(organizationIds.map((value) => value.trim()).filter(Boolean)),
+  );
+  if (requestedIds.length === 0) {
+    return { status: "invalid-organizations" };
+  }
+
+  const selectedOrganizations = await getOrganizations(requestedIds);
+  if (selectedOrganizations.length !== requestedIds.length) {
+    return { status: "invalid-organizations" };
+  }
+
+  const existing = await getMemberOrganizations(studentId);
+  const existingIds = new Set(
+    existing.map((organization) => organization.value),
+  );
+  const toAdd = selectedOrganizations.filter(
+    (organization) => !existingIds.has(organization.value),
+  );
+
+  if (existing.length + toAdd.length > MAX_MEMBER_ORGANIZATIONS) {
+    return { status: "limit-exceeded" };
+  }
+
+  if (toAdd.length === 0) {
+    return { status: "added", organizations: existing };
+  }
+
+  const memberKey = memberItemKey(studentId);
+
+  try {
+    await dynamodb.send(
+      new TransactWriteCommand({
+        TransactItems: toAdd.map((organization) => ({
+          Put: {
+            TableName: tableName(),
+            Item: {
+              PK: organizationItemKey(organization.value),
+              SK: memberKey,
+              organization_id: organization.value,
+              student_id: studentId.trim(),
+            },
+            ConditionExpression:
+              "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+          },
+        })),
+      }),
+    );
+  } catch (error: unknown) {
+    if (isTransactionCanceled(error)) {
+      return {
+        status: "added",
+        organizations: await getMemberOrganizations(studentId),
+      };
+    }
+    throw error;
+  }
+
+  return {
+    status: "added",
+    organizations: [...existing, ...toAdd],
+  };
+}
+
+export type UpdateCurrentOrganizationResult =
+  | { status: "updated" }
+  | { status: "member-not-found" }
+  | { status: "invalid-organization" }
+  | { status: "limit-exceeded" }
+  | { status: "not-member" };
+
+export async function updateMemberCurrentOrganization(
+  studentId: string,
+  organizationId: string,
+): Promise<UpdateCurrentOrganizationResult> {
+  const member = await getMember(studentId);
+  if (!member) {
+    return { status: "member-not-found" };
+  }
+
+  const memberKey = memberItemKey(studentId);
+
+  if (!organizationId) {
+    try {
+      await dynamodb.send(
+        new UpdateCommand({
+          TableName: tableName(),
+          Key: {
+            PK: memberKey,
+            SK: memberKey,
+          },
+          UpdateExpression: "SET current_organization = :organization",
+          ExpressionAttributeValues: {
+            ":organization": "",
+          },
+          ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
+        }),
+      );
+      return { status: "updated" };
+    } catch (error: unknown) {
+      if (isConditionalCheckFailed(error)) {
+        return { status: "member-not-found" };
+      }
+      throw error;
+    }
+  }
+
+  const organization = await getOrganization(organizationId);
+  if (!organization) {
+    return { status: "invalid-organization" };
+  }
+
+  const hasMembership = await isMemberOfOrganization(studentId, organizationId);
+  if (!hasMembership) {
+    const existing = await getMemberOrganizations(studentId);
+    if (existing.length + 1 > MAX_MEMBER_ORGANIZATIONS) {
+      return { status: "limit-exceeded" };
+    }
+  }
+
+  try {
+    await dynamodb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          hasMembership
+            ? {
+                ConditionCheck: {
+                  TableName: tableName(),
+                  Key: {
+                    PK: organizationItemKey(organizationId),
+                    SK: memberKey,
+                  },
+                  ConditionExpression:
+                    "attribute_exists(PK) AND attribute_exists(SK)",
+                },
+              }
+            : {
+                Put: {
+                  TableName: tableName(),
+                  Item: {
+                    PK: organizationItemKey(organizationId),
+                    SK: memberKey,
+                    organization_id: organizationId,
+                    student_id: studentId.trim(),
+                  },
+                  ConditionExpression:
+                    "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+                },
+              },
+          {
+            Update: {
+              TableName: tableName(),
+              Key: {
+                PK: memberKey,
+                SK: memberKey,
+              },
+              UpdateExpression: "SET current_organization = :organization",
+              ExpressionAttributeValues: {
+                ":organization": organizationId,
+              },
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_exists(SK)",
+            },
+          },
+        ],
+      }),
+    );
+
+    return { status: "updated" };
+  } catch (error: unknown) {
+    if (!isTransactionCanceled(error)) {
+      throw error;
+    }
+
+    if (!(await isMemberOfOrganization(studentId, organizationId))) {
+      return { status: "not-member" };
+    }
+
+    try {
+      await dynamodb.send(
+        new UpdateCommand({
+          TableName: tableName(),
+          Key: {
+            PK: memberKey,
+            SK: memberKey,
+          },
+          UpdateExpression: "SET current_organization = :organization",
+          ExpressionAttributeValues: {
+            ":organization": organizationId,
+          },
+          ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
+        }),
+      );
+      return { status: "updated" };
+    } catch (updateError: unknown) {
+      if (isConditionalCheckFailed(updateError)) {
+        return { status: "member-not-found" };
+      }
+      throw updateError;
+    }
+  }
+}
+
 export async function getMembers(
   memberKeys: string[],
 ): Promise<Map<string, Member>> {
@@ -392,6 +616,15 @@ function memberFromRecord(item: Record<string, unknown>): Member | null {
         ? item.registration_version
         : 0,
   };
+}
+
+function isConditionalCheckFailed(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "ConditionalCheckFailedException"
+  );
 }
 
 function isTransactionCanceled(error: unknown): boolean {

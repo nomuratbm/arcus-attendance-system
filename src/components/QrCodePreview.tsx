@@ -1,22 +1,112 @@
 "use client";
 
 import Image from "next/image";
-import type { Ref } from "react";
-import type { OrganizationOption } from "@/lib/organizations";
+import { useEffect, useState, type Ref } from "react";
+import { PlusIcon } from "lucide-react";
+import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
+import { Button } from "@/components/ui/button";
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+  ComboboxValue,
+} from "@/components/ui/combobox";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
+import {
+  Select,
+  SelectGroup,
+  SelectItem,
+  SelectPopup,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ADD_ORGANIZATIONS_VALUE,
+  addOrganizationsOption,
+  NO_ORGANIZATION_VALUE,
+  noOrganizationOption,
+  parseOrganizationOptions,
+  type OrganizationOption,
+} from "@/lib/organizations";
+import {
+  apiErrorMessage,
+  readResponseJson,
+  requestErrorMessage,
+} from "@/lib/request-errors";
+import { useOrganizationsStore } from "@/store/useOrganizationsStore";
 
 type QrCodePreviewProps = {
   dataUrl: string;
   studentId: string;
-  organization: OrganizationOption | null;
+  organization?: OrganizationOption | null;
+  organizations?: OrganizationOption[];
+  allowAddOrganizations?: boolean;
   ref?: Ref<HTMLDivElement>;
 };
 
 export function QrCodePreview({
   dataUrl,
   studentId,
-  organization,
+  organization = null,
+  organizations,
+  allowAddOrganizations = false,
   ref,
 }: QrCodePreviewProps) {
+  if (!organizations) {
+    return (
+      <StaticQrCodePreview
+        dataUrl={dataUrl}
+        organization={organization}
+        ref={ref}
+        studentId={studentId}
+      />
+    );
+  }
+
+  return (
+    <OrganizationQrCodePreview
+      allowAddOrganizations={allowAddOrganizations}
+      dataUrl={dataUrl}
+      organizations={organizations}
+      ref={ref}
+      studentId={studentId}
+    />
+  );
+}
+
+function StaticQrCodePreview({
+  dataUrl,
+  studentId,
+  organization,
+  ref,
+}: {
+  dataUrl: string;
+  studentId: string;
+  organization: OrganizationOption | null;
+  ref?: Ref<HTMLDivElement>;
+}) {
   return (
     <div
       className="flex flex-col items-center justify-center gap-4 px-6 pb-6 pt-2"
@@ -40,6 +130,391 @@ export function QrCodePreview({
         Right-click (or long press) and save this QR code image. You will need
         it to scan in at events.
       </p>
+    </div>
+  );
+}
+
+function OrganizationQrCodePreview({
+  dataUrl,
+  studentId,
+  organizations,
+  allowAddOrganizations,
+  ref,
+}: {
+  dataUrl: string;
+  studentId: string;
+  organizations: OrganizationOption[];
+  allowAddOrganizations: boolean;
+  ref?: Ref<HTMLDivElement>;
+}) {
+  const [memberOrganizations, setMemberOrganizations] = useState(organizations);
+  const [selectedOrganization, setSelectedOrganization] = useState<
+    string | null
+  >(null);
+  const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [organizationsToAdd, setOrganizationsToAdd] = useState<
+    OrganizationOption[]
+  >([]);
+  const [error, setError] = useState<string | null>(null);
+  const registryOrganizations = useOrganizationsStore(
+    (state) => state.organizations,
+  );
+  const organizationsError = useOrganizationsStore(
+    (state) => state.organizationsError,
+  );
+  const organizationsLoading = useOrganizationsStore(
+    (state) => state.organizationsLoading,
+  );
+  const loadOrganizations = useOrganizationsStore(
+    (state) => state.loadOrganizations,
+  );
+  const memberOrganizationIds = new Set(
+    memberOrganizations.map((item) => item.value),
+  );
+  const addableOrganizations = registryOrganizations.filter(
+    (item) => !memberOrganizationIds.has(item.value),
+  );
+  const availableOrganizations = [
+    noOrganizationOption,
+    ...registryOrganizations,
+    ...(allowAddOrganizations ? [addOrganizationsOption] : []),
+  ];
+  const selectedItem =
+    availableOrganizations.find(
+      (item) => item.value === selectedOrganization,
+    ) ?? null;
+
+  useEffect(() => {
+    void loadOrganizations();
+  }, [loadOrganizations]);
+
+  async function handleOrganizationChange(value: string | null) {
+    if (!value || value === selectedOrganization) {
+      return;
+    }
+
+    if (value === ADD_ORGANIZATIONS_VALUE) {
+      setOrganizationsToAdd([]);
+      setAddOpen(true);
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/member", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: studentId,
+          organization_id: value === NO_ORGANIZATION_VALUE ? null : value,
+        }),
+      });
+      const data = await readResponseJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Could not update the represented organization.",
+          ),
+        );
+      }
+
+      setSelectedOrganization(value);
+      if (value !== NO_ORGANIZATION_VALUE) {
+        const selected = registryOrganizations.find(
+          (item) => item.value === value,
+        );
+        if (selected) {
+          setMemberOrganizations((current) =>
+            current.some((item) => item.value === selected.value)
+              ? current
+              : [...current, selected],
+          );
+        }
+      }
+    } catch (updateError) {
+      setError(
+        requestErrorMessage(
+          updateError,
+          "Could not update the represented organization. Please try again.",
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAddOrganizations() {
+    if (organizationsToAdd.length === 0) {
+      setError("Select at least one organization to add.");
+      return;
+    }
+
+    setAdding(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/member", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: studentId,
+          add_organization_ids: organizationsToAdd.map((item) => item.value),
+        }),
+      });
+      const data = await readResponseJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(data, "Could not add the selected organizations."),
+        );
+      }
+
+      setMemberOrganizations(parseOrganizationOptions(data));
+      setOrganizationsToAdd([]);
+      setAddOpen(false);
+    } catch (addError) {
+      setError(
+        requestErrorMessage(
+          addError,
+          "Could not add the selected organizations. Please try again.",
+        ),
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-4 px-6 pb-6 pt-2"
+      ref={ref}
+    >
+      <Field aria-busy={saving} className="relative w-full max-w-sm">
+        {saving ? (
+          <AsyncLoadingOverlay
+            className="-inset-2"
+            label="Updating organization..."
+          />
+        ) : null}
+        <FieldLabel>Representing organization</FieldLabel>
+        {organizationsLoading && !registryOrganizations.length ? (
+          <Skeleton
+            aria-label="Loading organizations"
+            className="h-9 w-full"
+            role="status"
+          />
+        ) : (
+          <Select
+            disabled={saving || Boolean(organizationsError)}
+            isItemEqualToValue={(item, value) => item.value === value?.value}
+            items={availableOrganizations}
+            onValueChange={(value) => {
+              void handleOrganizationChange(value?.value ?? null);
+            }}
+            value={selectedItem}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an organization" />
+            </SelectTrigger>
+            <SelectPopup alignItemWithTrigger={false}>
+              <SelectGroup>
+                <SelectItem value={noOrganizationOption}>
+                  {noOrganizationOption.label}
+                </SelectItem>
+                {registryOrganizations.map((item) => (
+                  <SelectItem key={item.value} value={item}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              {allowAddOrganizations ? (
+                <>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectItem value={addOrganizationsOption}>
+                      <span className="flex items-center gap-2">
+                        <PlusIcon />
+                        Add organizations
+                      </span>
+                    </SelectItem>
+                  </SelectGroup>
+                </>
+              ) : null}
+            </SelectPopup>
+          </Select>
+        )}
+        <FieldDescription>
+          {organizationsError ? (
+            <span className="flex flex-wrap items-center gap-2" role="alert">
+              <span>{organizationsError}</span>
+              <Button
+                disabled={organizationsLoading || saving}
+                onClick={() => void loadOrganizations(true)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Retry
+              </Button>
+            </span>
+          ) : error && !addOpen ? (
+            error
+          ) : saving ? (
+            "Updating organization..."
+          ) : selectedOrganization === null ? (
+            "Select the organization represented for attendance."
+          ) : selectedOrganization === NO_ORGANIZATION_VALUE ? (
+            "Attendance will not represent an organization."
+          ) : (
+            "Attendance will be recorded under this organization."
+          )}
+        </FieldDescription>
+      </Field>
+      <Image
+        alt={`Student QR Code for ${studentId}`}
+        className="h-64 w-64 rounded-md border object-contain shadow-sm"
+        height={256}
+        src={dataUrl}
+        unoptimized
+        width={256}
+      />
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        Right-click (or long press) and save this QR code image. You will need
+        it to scan in at events.
+      </p>
+
+      {allowAddOrganizations ? (
+        <Dialog
+          onOpenChange={(open) => {
+            if (adding) {
+              return;
+            }
+            setAddOpen(open);
+            if (!open) {
+              setOrganizationsToAdd([]);
+            }
+          }}
+          open={addOpen}
+        >
+          <DialogPopup showCloseButton={!adding}>
+            <DialogHeader>
+              <DialogTitle>Add organizations</DialogTitle>
+              <DialogDescription>
+                Choose organizations to add to this student number. They will
+                appear in the representing organization list.
+              </DialogDescription>
+            </DialogHeader>
+            <Form
+              className="contents"
+              onFormSubmit={() => {
+                void handleAddOrganizations();
+              }}
+            >
+              <DialogPanel className="relative">
+                {adding ? (
+                  <AsyncLoadingOverlay label="Adding organizations..." />
+                ) : null}
+                <Field className="w-full">
+                  <FieldLabel>Organizations</FieldLabel>
+                  {organizationsLoading ? (
+                    <Skeleton
+                      aria-label="Loading organizations"
+                      className="h-9 w-full"
+                      role="status"
+                    />
+                  ) : (
+                    <Combobox
+                      disabled={adding || Boolean(organizationsError)}
+                      isItemEqualToValue={(item, value) =>
+                        item.value === value.value
+                      }
+                      itemToStringValue={(item) => item.label}
+                      items={addableOrganizations}
+                      multiple
+                      onValueChange={setOrganizationsToAdd}
+                      value={organizationsToAdd}
+                    >
+                      <ComboboxChips>
+                        <ComboboxValue>
+                          {organizationsToAdd.map((item) => (
+                            <ComboboxChip key={item.value}>
+                              {item.label}
+                            </ComboboxChip>
+                          ))}
+                        </ComboboxValue>
+                        <ComboboxChipsInput placeholder="Add an organization" />
+                      </ComboboxChips>
+                      <ComboboxPopup>
+                        <ComboboxEmpty>
+                          {addableOrganizations.length === 0
+                            ? "Every organization is already on this list."
+                            : "No organizations found."}
+                        </ComboboxEmpty>
+                        <ComboboxList>
+                          {(item) => (
+                            <ComboboxItem key={item.value} value={item}>
+                              {item.label}
+                            </ComboboxItem>
+                          )}
+                        </ComboboxList>
+                      </ComboboxPopup>
+                    </Combobox>
+                  )}
+                  <FieldDescription>
+                    {organizationsError ? (
+                      <span
+                        className="flex flex-wrap items-center gap-2"
+                        role="alert"
+                      >
+                        <span>{organizationsError}</span>
+                        <Button
+                          disabled={organizationsLoading || adding}
+                          onClick={() => void loadOrganizations(true)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Retry
+                        </Button>
+                      </span>
+                    ) : error && addOpen ? (
+                      error
+                    ) : (
+                      "Only organizations that are not already listed can be added."
+                    )}
+                  </FieldDescription>
+                </Field>
+              </DialogPanel>
+              <DialogFooter>
+                <DialogClose
+                  render={
+                    <Button disabled={adding} type="button" variant="outline" />
+                  }
+                >
+                  Cancel
+                </DialogClose>
+                <Button
+                  disabled={
+                    adding ||
+                    organizationsLoading ||
+                    organizationsToAdd.length === 0
+                  }
+                  loading={adding}
+                  type="submit"
+                >
+                  Add organizations
+                </Button>
+              </DialogFooter>
+            </Form>
+          </DialogPopup>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

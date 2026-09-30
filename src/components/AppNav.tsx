@@ -9,6 +9,11 @@ import {
   segmentedControlRootClassName,
 } from "@/lib/segmented-control";
 
+const publicNavItems = [
+  { href: "/", label: "Register" },
+  { href: "/retrieve", label: "Retrieve" },
+] as const;
+
 const adminNavItems = [
   { href: "/scanner", label: "Scanner" },
   { href: "/addevent", label: "Add Event" },
@@ -54,12 +59,17 @@ function SegmentedPageNav({
   );
 }
 
+function isPublicPath(pathname: string) {
+  return pathname === "/" || pathname === "/retrieve";
+}
+
 export function AppNav() {
   const pathname = usePathname();
 
-  if (pathname === "/") {
+  if (isPublicPath(pathname)) {
     return (
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
+        <SegmentedPageNav items={publicNavItems} pathname={pathname} />
         <Button
           onFocus={preloadScanner}
           onMouseEnter={preloadScanner}

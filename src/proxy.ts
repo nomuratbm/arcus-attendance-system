@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/auth/cookie-names";
 
 export function proxy(request: NextRequest) {
+  if (
+    request.method === "PATCH" &&
+    request.nextUrl.pathname === "/api/member"
+  ) {
+    return NextResponse.next();
+  }
+
   const hasSession =
     request.cookies.has(ACCESS_COOKIE) || request.cookies.has(REFRESH_COOKIE);
 
