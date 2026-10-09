@@ -51,7 +51,7 @@ export type AccessVerification =
   | { status: "forbidden" }
   | { status: "invalid" }
   | { status: "missing" }
-  | { status: "ok" };
+  | { status: "ok"; groups?: string[] };
 
 type AccessVerifier = ReturnType<
   typeof CognitoJwtVerifier.create<{
@@ -168,8 +168,12 @@ export async function verifyAccessToken(
   }
 
   try {
-    await getAccessVerifier().verify(token);
-    return { status: "ok" };
+    const payload = await getAccessVerifier().verify(token);
+    const rawGroups = (payload as { "cognito:groups"?: unknown })["cognito:groups"];
+    const groups = Array.isArray(rawGroups)
+      ? rawGroups.filter((group): group is string => typeof group === "string")
+      : [];
+    return { status: "ok", groups };
   } catch (error) {
     if (error instanceof JwtExpiredError) {
       return { status: "expired" };
@@ -218,7 +222,7 @@ export async function persistRefreshedSession(): Promise<AccessVerification> {
     }
 
     applyTokenCookies(cookieStore, tokens);
-    return { status: "ok" };
+    return { status: "ok", groups: verified.groups };
   } catch (error) {
     console.error("Failed to refresh Cognito session:", error);
     return { status: "invalid" };
@@ -230,6 +234,33 @@ export async function requireAdminPage(returnPath: string): Promise<void> {
 
   if (verified.status === "ok") {
     return;
+  }
+
+  if (verified.status === "forbidden") {
+    redirect("/forbidden");
+  }
+
+  const cookieStore = await cookies();
+  const canRefresh =
+    Boolean(cookieStore.get(REFRESH_COOKIE)?.value) &&
+    (verified.status === "expired" || verified.status === "missing");
+
+  if (canRefresh) {
+    redirect(`/api/auth/refresh?next=${encodeURIComponent(returnPath)}`);
+  }
+
+  redirect(`/api/auth/login?next=${encodeURIComponent(returnPath)}`);
+}
+
+export async function requireSuperAdminPage(returnPath: string): Promise<void> {
+  const verified = await verifyAccessCookie();
+
+  if (verified.status === "ok") {
+    const { superAdminGroup } = getCognitoConfig();
+    if (verified.groups?.includes(superAdminGroup)) {
+      return;
+    }
+    redirect("/forbidden");
   }
 
   if (verified.status === "forbidden") {

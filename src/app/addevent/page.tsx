@@ -1,9 +1,9 @@
 import { AddEventForm } from "@/components/AddEventForm";
 import { AppHeader, PageShell } from "@/components/AppHeader";
-import { requireAdminPage } from "@/lib/auth/session";
+import { requireSuperAdminPage } from "@/lib/auth/session";
 
 export default async function AddEventPage() {
-  await requireAdminPage("/addevent");
+  await requireSuperAdminPage("/addevent");
   return (
     <PageShell>
       <AppHeader subtitle="Event Creation" />

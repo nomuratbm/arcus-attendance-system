@@ -1,9 +1,9 @@
 import { AppHeader, PageShell } from "@/components/AppHeader";
 import { OrganizationsImport } from "@/components/OrganizationsImport";
-import { requireAdminPage } from "@/lib/auth/session";
+import { requireSuperAdminPage } from "@/lib/auth/session";
 
 export default async function OrganizationsPage() {
-  await requireAdminPage("/organizations");
+  await requireSuperAdminPage("/organizations");
 
   return (
     <PageShell>
