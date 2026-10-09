@@ -3,6 +3,7 @@ import "server-only";
 export type CognitoConfig = {
   adminGroup: string;
   appBaseUrl: string;
+  orgSubmitterGroup: string;
   superAdminGroup: string;
   clientId: string;
   clientSecret: string;
@@ -29,8 +30,10 @@ export function getCognitoConfig(): CognitoConfig {
   return {
     adminGroup: required("COGNITO_ADMIN_GROUP"),
     appBaseUrl,
+    orgSubmitterGroup:
+      process.env.COGNITO_ORG_SUBMITTER_GROUP?.trim() || "org_submitter",
     superAdminGroup:
-      process.env.COGNITO_SUPER_ADMIN_GROUP?.trim() || "super-admin",
+      process.env.COGNITO_SUPER_ADMIN_GROUP?.trim() || "admin",
     clientId: required("COGNITO_CLIENT_ID"),
     clientSecret: required("COGNITO_CLIENT_SECRET"),
     domain,

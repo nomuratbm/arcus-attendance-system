@@ -51,7 +51,7 @@ export type AccessVerification =
   | { status: "forbidden" }
   | { status: "invalid" }
   | { status: "missing" }
-  | { status: "ok"; groups?: string[] };
+  | { status: "ok"; groups?: string[]; organizationId?: string };
 
 type AccessVerifier = ReturnType<
   typeof CognitoJwtVerifier.create<{
@@ -88,10 +88,14 @@ function getAccessVerifier(): AccessVerifier {
     const config = getCognitoConfig();
     accessVerifier = CognitoJwtVerifier.create({
       clientId: config.clientId,
-      // Accept either the admin or the super-admin group (aws-jwt-verify
-      // treats an array as "at least one overlap"), so existing admin logins
-      // are unaffected while super-admins can reach the admin pages.
-      groups: [config.adminGroup, config.superAdminGroup],
+      // Accept the admin, super-admin, or org_submitter group (aws-jwt-verify
+      // treats an array as "at least one overlap"). org_submitters operate the
+      // scanner with the same access as admins; super-admin-only pages still
+      // re-check the super-admin group separately.
+      groups: [
+        config.superAdminGroup,
+        config.orgSubmitterGroup,
+      ],
       tokenUse: "access",
       userPoolId: config.userPoolId,
     });
@@ -173,7 +177,14 @@ export async function verifyAccessToken(
     const groups = Array.isArray(rawGroups)
       ? rawGroups.filter((group): group is string => typeof group === "string")
       : [];
-    return { status: "ok", groups };
+    const rawOrganizationId = (
+      payload as { "custom:organization_id"?: unknown }
+    )["custom:organization_id"];
+    const organizationId =
+      typeof rawOrganizationId === "string" && rawOrganizationId.trim()
+        ? rawOrganizationId.trim()
+        : undefined;
+    return { status: "ok", groups, organizationId };
   } catch (error) {
     if (error instanceof JwtExpiredError) {
       return { status: "expired" };
@@ -295,4 +306,46 @@ export async function requireAdminApi(): Promise<NextResponse | null> {
   }
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+export type AdminApiIdentity = {
+  unauthorized: NextResponse | null;
+  organizationId: string | null;
+  groups: string[];
+};
+
+/**
+ * Like requireAdminApi(), but also returns the caller's organization scope and
+ * groups so server routes can trust the token (not a client-supplied param)
+ * when calling the mapua-apex backend. `organizationId` is null for admins who
+ * have no custom:organization_id claim — they are allowed to see every org.
+ */
+export async function requireAdminApiWithIdentity(): Promise<AdminApiIdentity> {
+  let verified = await verifyAccessCookie();
+
+  if (verified.status === "expired" || verified.status === "missing") {
+    verified = await persistRefreshedSession();
+  }
+
+  if (verified.status === "ok") {
+    return {
+      unauthorized: null,
+      organizationId: verified.organizationId ?? null,
+      groups: verified.groups ?? [],
+    };
+  }
+
+  if (verified.status === "forbidden") {
+    return {
+      unauthorized: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+      organizationId: null,
+      groups: [],
+    };
+  }
+
+  return {
+    unauthorized: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    organizationId: null,
+    groups: [],
+  };
 }

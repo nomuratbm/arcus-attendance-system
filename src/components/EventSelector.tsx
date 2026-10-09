@@ -1,17 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useEffect, useMemo } from "react";
 import {
   Card,
   CardDescription,
@@ -19,13 +8,6 @@ import {
   CardPanel,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ContextMenu,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuPopup,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import {
   Field,
   FieldDescription,
@@ -43,18 +25,19 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { ToastProvider, toastManager } from "@/components/ui/toast";
 import {
-  apiErrorMessage,
-  readResponseJson,
-  requestErrorMessage,
-} from "@/lib/request-errors";
-import { organizationItemKey } from "@/store/dynamodb-keys";
+  organizationIdFromKey,
+  organizationItemKey,
+} from "@/store/dynamodb-keys";
 import { useAttendanceStore } from "@/store/useAttendanceStore";
 import { useEventsStore } from "@/store/useEventsStore";
-import { useOrganizationsStore } from "@/store/useOrganizationsStore";
 
 type EventSelectItem = {
+  label: string;
+  value: string;
+};
+
+type OrganizationSelectItem = {
   label: string;
   value: string;
 };
@@ -69,7 +52,6 @@ export function EventSelector() {
   const setSelectedOrganizationId = useEventsStore(
     (state) => state.setSelectedOrganizationId,
   );
-  const removeEvent = useEventsStore((state) => state.removeEvent);
   const eventsLoading = useEventsStore((state) => state.eventsLoading);
   const eventsError = useEventsStore((state) => state.eventsError);
   const attendanceLoading = useAttendanceStore(
@@ -81,32 +63,35 @@ export function EventSelector() {
   const setScanTimestampMode = useAttendanceStore(
     (state) => state.setScanTimestampMode,
   );
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const organizations = useOrganizationsStore((state) => state.organizations);
-  const organizationsError = useOrganizationsStore(
-    (state) => state.organizationsError,
-  );
-  const organizationsLoading = useOrganizationsStore(
-    (state) => state.organizationsLoading,
-  );
-  const loadOrganizations = useOrganizationsStore(
-    (state) => state.loadOrganizations,
-  );
+
+  // Organizations are derived from the loaded mapua-apex events (each carries
+  // its own organization_id / organization_name), so an org_submitter sees only
+  // their org and an admin sees every org that has an open event today.
+  const organizations = useMemo<OrganizationSelectItem[]>(() => {
+    const seen = new Map<string, string>();
+    for (const event of events) {
+      const organizationId = organizationIdFromKey(event.GSI3SK);
+      if (!organizationId || seen.has(organizationId)) {
+        continue;
+      }
+      seen.set(organizationId, event.organizationName || organizationId);
+    }
+    return Array.from(seen, ([value, label]) => ({ value, label })).sort(
+      (left, right) => left.label.localeCompare(right.label),
+    );
+  }, [events]);
+
   const selectedOrganization =
     organizations.find(
       (organization) => organization.value === selectedOrganizationId,
     ) ?? null;
 
+  // Auto-select when there is exactly one org (the common org_submitter case).
   useEffect(() => {
-    setSelectedEventPK(null);
-    setSelectedOrganizationId(null);
-    void loadOrganizations();
-  }, [
-    loadOrganizations,
-    setSelectedEventPK,
-    setSelectedOrganizationId,
-  ]);
+    if (!selectedOrganizationId && organizations.length === 1) {
+      setSelectedOrganizationId(organizations[0].value);
+    }
+  }, [organizations, selectedOrganizationId, setSelectedOrganizationId]);
 
   const organizationKey = selectedOrganizationId
     ? organizationItemKey(selectedOrganizationId)
@@ -120,11 +105,7 @@ export function EventSelector() {
   }));
   const selectedItem =
     eventItems.find((item) => item.value === selectedEventPK) ?? null;
-  const selectedEvent = organizationEvents.find(
-    (event) => event.PK === selectedEventPK,
-  );
   const hasEvents = eventItems.length > 0;
-  const canDelete = Boolean(selectedEvent);
   const selectPlaceholder =
     !selectedOrganizationId
       ? "Select an organization first"
@@ -134,80 +115,32 @@ export function EventSelector() {
           ? "Select an event"
           : "No events for this organization";
 
-  async function handleConfirmDelete() {
-    if (!selectedEvent) {
-      return;
-    }
-
-    const eventId = selectedEvent.PK.replace(/^EVENT#/, "");
-    setIsDeleting(true);
-
-    try {
-      const response = await fetch(`/api/events/${encodeURIComponent(eventId)}`, {
-        method: "DELETE",
-      });
-      const data = await readResponseJson(response);
-
-      if (!response.ok) {
-        toastManager.add({
-          type: "error",
-          title: "Could not delete event",
-          description: apiErrorMessage(data, "Failed to delete event."),
-        });
-        return;
-      }
-
-      removeEvent(selectedEvent.PK);
-      setIsDeleteOpen(false);
-      toastManager.add({
-        type: "success",
-        title: "Event deleted",
-        description: selectedEvent.name,
-      });
-    } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: "Could not delete event",
-        description: requestErrorMessage(
-          error,
-          "Could not delete the event. Please try again.",
-        ),
-      });
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
   return (
-    <ToastProvider position="bottom-right">
-      <Card>
-        <CardHeader>
-          <CardTitle>Active event</CardTitle>
-          <CardDescription>
-            Choose the organization and event this scan session is recording
-            attendance for.
-          </CardDescription>
-        </CardHeader>
-        <CardPanel className="flex flex-col gap-4">
-          <Field className="w-full">
-            <FieldLabel>Organization</FieldLabel>
-            {organizationsLoading ? (
-              <Skeleton
-                aria-label="Loading organizations"
-                className="h-9 w-full"
-                role="status"
-              />
-            ) : (
-              <Select
+    <Card>
+      <CardHeader>
+        <CardTitle>Active event</CardTitle>
+        <CardDescription>
+          Choose the organization and event this scan session is recording
+          attendance for. Only approved events happening today are listed.
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="flex flex-col gap-4">
+        <Field className="w-full">
+          <FieldLabel>Organization</FieldLabel>
+          {eventsLoading && organizations.length === 0 ? (
+            <Skeleton
+              aria-label="Loading organizations"
+              className="h-9 w-full"
+              role="status"
+            />
+          ) : (
+            <Select
               disabled={
-                organizationsLoading ||
                 eventsLoading ||
                 attendanceLoading ||
-                Boolean(organizationsError)
+                organizations.length === 0
               }
-              isItemEqualToValue={(item, value) =>
-                item.value === value?.value
-              }
+              isItemEqualToValue={(item, value) => item.value === value?.value}
               items={organizations}
               onValueChange={(value) => {
                 setSelectedOrganizationId(value?.value ?? null);
@@ -227,150 +160,83 @@ export function EventSelector() {
                   ))}
                 </SelectGroup>
               </SelectPopup>
-              </Select>
-            )}
-            <FieldDescription>
-              {organizationsError ? (
-                <span className="flex flex-wrap items-center gap-2" role="alert">
-                  <span>{organizationsError}</span>
-                  <Button
-                    disabled={organizationsLoading}
-                    onClick={() => void loadOrganizations(true)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Retry
-                  </Button>
-                </span>
-              ) : (
-                "Events are listed only for the selected organization."
-              )}
-            </FieldDescription>
-          </Field>
-          <Field className="w-full">
-            <FieldLabel>Event</FieldLabel>
-            {eventsLoading ? (
-              <Skeleton
-                aria-label="Loading events"
-                className="h-9 w-full"
-                role="status"
-              />
+            </Select>
+          )}
+          <FieldDescription>
+            {eventsError ? (
+              <span role="alert">{eventsError}</span>
             ) : (
-              <ContextMenu>
-              <ContextMenuTrigger className="block w-full" render={<div />}>
-                <Select
-                  disabled={!hasEvents || attendanceLoading}
-                  isItemEqualToValue={(itemValue, value) =>
-                    itemValue.value === value?.value
-                  }
-                  items={eventItems}
-                  onValueChange={(value) => {
-                    setSelectedEventPK(value?.value ?? null);
-                  }}
-                  value={selectedItem}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={selectPlaceholder} />
-                  </SelectTrigger>
-                  <SelectPopup alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      <SelectGroupLabel>Events</SelectGroupLabel>
-                      {eventItems.map((item) => (
-                        <SelectItem key={item.value} value={item}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectPopup>
-                </Select>
-              </ContextMenuTrigger>
-              <ContextMenuPopup>
-                <ContextMenuGroup>
-                  <ContextMenuItem
-                    disabled={!canDelete}
-                    onClick={() => setIsDeleteOpen(true)}
-                    variant="destructive"
-                  >
-                    <Trash2 />
-                    Delete event
-                  </ContextMenuItem>
-                </ContextMenuGroup>
-              </ContextMenuPopup>
-              </ContextMenu>
+              "Organizations are listed from approved events open today."
             )}
-            <FieldDescription>
-              {eventsError
-                ? eventsError
-                : hasEvents
-                  ? "Attendance scans will be recorded for this event. Right-click to delete it."
-                  : eventsLoading
-                    ? "Loading events from the registry."
-                    : selectedOrganizationId
-                      ? "Use Add Event in the header to create an event for this organization."
-                      : "Select an organization to load its events."}
-            </FieldDescription>
-          </Field>
-          <Field className="w-full">
-            <FieldLabel>Scan timestamp</FieldLabel>
-            <FieldItem className="items-center gap-3">
-              <span className="text-sm">Entered at</span>
-              <Switch
-                aria-label="Toggle between Entered at and Left at"
-                checked={scanTimestampMode === "leftAt"}
-                onCheckedChange={(checked) => {
-                  setScanTimestampMode(checked ? "leftAt" : "enteredAt");
-                }}
-              />
-              <span className="text-sm">Left at</span>
-            </FieldItem>
-            <FieldDescription>
-              {scanTimestampMode === "leftAt"
-                ? "Scanning a student QR updates their left-at time. Later scans overwrite the previous time."
-                : "Scanning a student QR records their entered-at check-in for this event."}
-            </FieldDescription>
-          </Field>
-        </CardPanel>
-      </Card>
-
-      <AlertDialog
-        onOpenChange={(open) => {
-          if (!isDeleting) {
-            setIsDeleteOpen(open);
-          }
-        }}
-        open={isDeleteOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete event?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes{" "}
-              <strong className="text-foreground">
-                {selectedEvent?.name ?? "this event"}
-              </strong>{" "}
-              from the active event list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose
-              render={
-                <Button disabled={isDeleting} size="sm" variant="outline" />
+          </FieldDescription>
+        </Field>
+        <Field className="w-full">
+          <FieldLabel>Event</FieldLabel>
+          {eventsLoading ? (
+            <Skeleton
+              aria-label="Loading events"
+              className="h-9 w-full"
+              role="status"
+            />
+          ) : (
+            <Select
+              disabled={!hasEvents || attendanceLoading}
+              isItemEqualToValue={(itemValue, value) =>
+                itemValue.value === value?.value
               }
+              items={eventItems}
+              onValueChange={(value) => {
+                setSelectedEventPK(value?.value ?? null);
+              }}
+              value={selectedItem}
             >
-              Cancel
-            </AlertDialogClose>
-            <Button
-              loading={isDeleting}
-              onClick={handleConfirmDelete}
-              size="sm"
-              variant="destructive"
-            >
-              Delete event
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </ToastProvider>
+              <SelectTrigger>
+                <SelectValue placeholder={selectPlaceholder} />
+              </SelectTrigger>
+              <SelectPopup alignItemWithTrigger={false}>
+                <SelectGroup>
+                  <SelectGroupLabel>Events</SelectGroupLabel>
+                  {eventItems.map((item) => (
+                    <SelectItem key={item.value} value={item}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectPopup>
+            </Select>
+          )}
+          <FieldDescription>
+            {eventsError
+              ? eventsError
+              : hasEvents
+                ? "Attendance scans will be recorded for this event."
+                : eventsLoading
+                  ? "Loading events from mapua-apex."
+                  : selectedOrganizationId
+                    ? "No approved event is open for this organization today."
+                    : "Select an organization to load its events."}
+          </FieldDescription>
+        </Field>
+        <Field className="w-full">
+          <FieldLabel>Scan timestamp</FieldLabel>
+          <FieldItem className="items-center gap-3">
+            <span className="text-sm">Entered at</span>
+            <Switch
+              aria-label="Toggle between Entered at and Left at"
+              checked={scanTimestampMode === "leftAt"}
+              onCheckedChange={(checked) => {
+                setScanTimestampMode(checked ? "leftAt" : "enteredAt");
+              }}
+            />
+            <span className="text-sm">Left at</span>
+          </FieldItem>
+          <FieldDescription>
+            {scanTimestampMode === "leftAt"
+              ? "Scanning a student QR updates their left-at time. Later scans overwrite the previous time."
+              : "Scanning a student QR records their entered-at check-in for this event."}
+          </FieldDescription>
+        </Field>
+      </CardPanel>
+    </Card>
   );
 }

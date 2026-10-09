@@ -36,6 +36,7 @@ export interface AttendanceEvent {
   GSI3SK: string;
   name: string;
   description: string;
+  organizationName: string;
 }
 
 interface EventsState {
@@ -47,6 +48,7 @@ interface EventsState {
   addEvent: (event: AttendanceEvent) => void;
   removeEvent: (pk: string) => void;
   setEvents: (events: AttendanceEvent[]) => void;
+  replaceEvents: (events: AttendanceEvent[]) => void;
   setEventsLoading: (loading: boolean) => void;
   setEventsError: (error: string | null) => void;
   setSelectedEventPK: (pk: string | null) => void;
@@ -98,6 +100,12 @@ export function parseAttendanceEvent(raw: unknown): AttendanceEvent | null {
         ? raw.GSI3SK
         : organizationItemKey(raw.GSI3SK)
       : "";
+  const organizationName =
+    typeof raw.organization_name === "string"
+      ? raw.organization_name
+      : typeof raw.organizationName === "string"
+        ? raw.organizationName
+        : "";
 
   return {
     PK: pk,
@@ -108,6 +116,7 @@ export function parseAttendanceEvent(raw: unknown): AttendanceEvent | null {
     GSI3SK: gsi3sk,
     name,
     description,
+    organizationName,
   };
 }
 
@@ -161,6 +170,17 @@ export const useEventsStore = create<EventsState>()(
             ),
           };
         });
+      },
+
+      replaceEvents: (incoming) => {
+        set((state) => ({
+          events: incoming,
+          eventsError: null,
+          selectedEventPK: resolveSelectedEventPK(
+            state.selectedEventPK,
+            incoming,
+          ),
+        }));
       },
 
       setEventsLoading: (eventsLoading) => set({ eventsLoading }),

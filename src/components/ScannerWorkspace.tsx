@@ -85,31 +85,19 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
 
 export function ScannerWorkspace() {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
-  const selectedOrganizationId = useEventsStore(
-    (state) => state.selectedOrganizationId,
-  );
 
   useEffect(() => {
-    const { setEvents, setEventsError, setEventsLoading } =
+    const { replaceEvents, setEventsError, setEventsLoading } =
       useEventsStore.getState();
     const controller = new AbortController();
-
-    if (!selectedOrganizationId) {
-      setEventsError(null);
-      setEventsLoading(false);
-      return;
-    }
 
     setEventsLoading(true);
     setEventsError(null);
 
-    void fetch(
-      `/api/events?organization=${encodeURIComponent(selectedOrganizationId)}`,
-      {
-        cache: "no-store",
-        signal: controller.signal,
-      },
-    )
+    void fetch("/api/apex/events", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
         const data = await readResponseJson(response);
         if (!response.ok) {
@@ -121,7 +109,7 @@ export function ScannerWorkspace() {
           throw new Error("Failed to load events.");
         }
 
-        setEvents(events);
+        replaceEvents(events);
       })
       .catch((error: unknown) => {
         if (isAbortError(error, controller.signal)) {
@@ -144,7 +132,7 @@ export function ScannerWorkspace() {
     return () => {
       controller.abort();
     };
-  }, [selectedOrganizationId]);
+  }, []);
 
   useEffect(() => {
     const {
