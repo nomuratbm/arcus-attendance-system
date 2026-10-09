@@ -56,7 +56,7 @@ export type AccessVerification =
 type AccessVerifier = ReturnType<
   typeof CognitoJwtVerifier.create<{
     clientId: string;
-    groups: string;
+    groups: string[];
     tokenUse: "access";
     userPoolId: string;
   }>
@@ -88,7 +88,10 @@ function getAccessVerifier(): AccessVerifier {
     const config = getCognitoConfig();
     accessVerifier = CognitoJwtVerifier.create({
       clientId: config.clientId,
-      groups: config.adminGroup,
+      // Accept either the admin or the super-admin group (aws-jwt-verify
+      // treats an array as "at least one overlap"), so existing admin logins
+      // are unaffected while super-admins can reach the admin pages.
+      groups: [config.adminGroup, config.superAdminGroup],
       tokenUse: "access",
       userPoolId: config.userPoolId,
     });

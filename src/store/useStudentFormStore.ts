@@ -45,7 +45,7 @@ export const useStudentFormStore = create<StudentFormState>((set, get) => ({
   setFormData: (data) => set((state) => ({ ...state, ...data })),
   setSubmitting: (submitting) => set({ submitting }),
 
-  clearFormData: () => set(emptyFormData),
+  clearFormData: () => set({ ...emptyFormData, submitting: false }),
 
   buildMemberItem: () => {
     const state = get();

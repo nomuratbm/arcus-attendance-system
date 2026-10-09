@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local git worktree (staging branch) — not part of the main app build/lint
+    "update/**",
   ]),
 ]);
 
