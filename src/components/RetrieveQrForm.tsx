@@ -36,6 +36,7 @@ import {
   requestErrorMessage,
 } from "@/lib/request-errors";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
+import { validateStudentNumber } from "@/lib/student-validation";
 
 type ErrorModal = {
   title: string;
@@ -60,10 +61,11 @@ export function RetrieveQrForm() {
 
   async function handleFormSubmit(formValues: Record<string, unknown>) {
     const studentNumber = String(formValues.studentNumber ?? "").trim();
-    if (!studentNumber) {
+    const studentNumberValidation = validateStudentNumber(studentNumber);
+    if (!studentNumberValidation.ok) {
       setErrorModal({
-        title: "Student number required",
-        description: "Enter a student number before retrieving a QR code.",
+        title: "Invalid student number",
+        description: studentNumberValidation.message,
       });
       return;
     }

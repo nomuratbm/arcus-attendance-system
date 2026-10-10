@@ -41,6 +41,11 @@ import {
   requestErrorMessage,
 } from "@/lib/request-errors";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
+import {
+  validateProgramYear,
+  validateStudentName,
+  validateStudentNumber,
+} from "@/lib/student-validation";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
 
 type QrMemberContext = {
@@ -192,6 +197,21 @@ export function StudentDetailsForm() {
       return;
     }
 
+    const validationResults = [
+      validateStudentName(studentName),
+      validateStudentNumber(studentNumber),
+      validateProgramYear(programYear),
+    ];
+    const firstInvalid = validationResults.find((result) => !result.ok);
+    if (firstInvalid && !firstInvalid.ok) {
+      toastManager.add({
+        type: "error",
+        title: "Check your details",
+        description: firstInvalid.message,
+      });
+      return;
+    }
+
     if (!formState.organizationSelection) {
       toastManager.add({
         type: "error",
@@ -339,6 +359,7 @@ export function StudentDetailsForm() {
               <FieldLabel>Program - Year</FieldLabel>
               <Input
                 autoComplete="off"
+                maxLength={7}
                 name="programYear"
                 onChange={(event) => {
                   useStudentFormStore.getState().setFormData({
