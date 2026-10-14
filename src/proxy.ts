@@ -29,8 +29,6 @@ export const config = {
   matcher: [
     "/scanner",
     "/scanner/:path*",
-    "/addevent",
-    "/addevent/:path*",
     "/organizations",
     "/organizations/:path*",
     "/api/member",

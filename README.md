@@ -9,7 +9,6 @@ The npm package name is `scan-to-pdf`.
 ## Pages
 
 - `/` — Student registration form. The browser keeps this form data for the tab session.
-- `/addevent` — Event create form. Event records stay in the browser.
 - `/scanner` — QR scan, member check, event select, and PDF export.
 
 ## How the app queries DynamoDB
@@ -78,7 +77,7 @@ The registration form does not create the UUID or the `MEMBER#` keys yet.
 
 ### Event item
 
-The add-event page creates this shape in the browser.
+The scanner maps apex-published events to this shape in the browser.
 The app does not write this item to DynamoDB.
 
 | Attribute | Type | Meaning |
@@ -132,7 +131,6 @@ arcus-attendance-system/
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx              # Registration (`/`)
-│   │   ├── addevent/page.tsx     # Add event (`/addevent`)
 │   │   ├── scanner/page.tsx      # Scanner (`/scanner`)
 │   │   └── api/member/route.ts   # DynamoDB member query
 │   ├── components/               # Pages, scanner, forms, header

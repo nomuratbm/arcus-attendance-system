@@ -67,10 +67,6 @@ export function safeReturnPath(value: string | null | undefined): string {
     return value;
   }
 
-  if (value === "/addevent" || value.startsWith("/addevent/")) {
-    return value;
-  }
-
   if (value === "/organizations" || value.startsWith("/organizations/")) {
     return value;
   }
