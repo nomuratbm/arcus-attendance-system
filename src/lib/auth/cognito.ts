@@ -60,18 +60,17 @@ export function safeReturnPath(value: string | null | undefined): string {
     value.startsWith("//") ||
     value.includes("\\")
   ) {
-    return "/scanner";
+    return "/";
   }
 
-  if (value === "/scanner" || value.startsWith("/scanner/")) {
+  // `/` self-routes by audience: scanees see the form, operators are bounced
+  // to `/scanner` by the landing redirect. `/scanner` is only kept as an
+  // explicit target for org accounts that requested it directly.
+  if (value === "/" || value === "/scanner" || value.startsWith("/scanner/")) {
     return value;
   }
 
-  if (value === "/organizations" || value.startsWith("/organizations/")) {
-    return value;
-  }
-
-  return "/scanner";
+  return "/";
 }
 
 export async function exchangeAuthorizationCode(

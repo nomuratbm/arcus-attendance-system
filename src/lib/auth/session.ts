@@ -267,33 +267,6 @@ export async function requireAdminPage(returnPath: string): Promise<void> {
   redirect(`/api/auth/login?next=${encodeURIComponent(returnPath)}`);
 }
 
-export async function requireSuperAdminPage(returnPath: string): Promise<void> {
-  const verified = await verifyAccessCookie();
-
-  if (verified.status === "ok") {
-    const { superAdminGroup } = getCognitoConfig();
-    if (verified.groups?.includes(superAdminGroup)) {
-      return;
-    }
-    redirect("/forbidden");
-  }
-
-  if (verified.status === "forbidden") {
-    redirect("/forbidden");
-  }
-
-  const cookieStore = await cookies();
-  const canRefresh =
-    Boolean(cookieStore.get(REFRESH_COOKIE)?.value) &&
-    (verified.status === "expired" || verified.status === "missing");
-
-  if (canRefresh) {
-    redirect(`/api/auth/refresh?next=${encodeURIComponent(returnPath)}`);
-  }
-
-  redirect(`/api/auth/login?next=${encodeURIComponent(returnPath)}`);
-}
-
 export async function requireAdminApi(): Promise<NextResponse | null> {
   let verified = await verifyAccessCookie();
 

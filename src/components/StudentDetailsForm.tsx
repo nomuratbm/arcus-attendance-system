@@ -418,7 +418,6 @@ export function StudentDetailsForm() {
             <DialogClose render={<Button type="button" variant="ghost" />}>
               OK
             </DialogClose>
-            <Button render={<a href="/retrieve" />}>Retrieve QR</Button>
           </DialogFooter>
         </DialogPopup>
       </Dialog>

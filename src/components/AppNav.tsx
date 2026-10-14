@@ -9,7 +9,6 @@ import {
 
 const scaneeNavItems = [
   { href: "/", label: "Register" },
-  { href: "/retrieve", label: "Retrieve" },
 ] as const;
 
 const orgNavItems = [
