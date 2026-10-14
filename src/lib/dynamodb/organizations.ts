@@ -37,7 +37,10 @@ export async function getOrganization(
     new GetCommand({
       TableName: tableName(),
       Key: { PK: key, SK: key },
-      ProjectionExpression: "PK, SK, name",
+      // `name` is a DynamoDB reserved word, so it must go through an
+      // expression attribute name placeholder.
+      ProjectionExpression: "PK, SK, #orgName",
+      ExpressionAttributeNames: { "#orgName": "name" },
     }),
   );
 
@@ -72,7 +75,8 @@ export async function getOrganizations(
           RequestItems: {
             [name]: {
               Keys: keys,
-              ProjectionExpression: "PK, SK, name",
+              ProjectionExpression: "PK, SK, #orgName",
+              ExpressionAttributeNames: { "#orgName": "name" },
             },
           },
         }),
@@ -118,7 +122,8 @@ async function listOrganizationRecords(): Promise<OrganizationRecord[]> {
         ExpressionAttributeValues: {
           ":prefix": "ORGANIZATION#",
         },
-        ProjectionExpression: "PK, SK, name",
+        ProjectionExpression: "PK, SK, #orgName",
+        ExpressionAttributeNames: { "#orgName": "name" },
       }),
     );
 

@@ -6,7 +6,7 @@ export default async function ScannerPage() {
   await requireAdminPage("/scanner");
   return (
     <PageShell>
-      <AppHeader isOrgAccount subtitle="Scanner View" />
+      <AppHeader subtitle="Scanner View" />
       <ScannerWorkspace />
     </PageShell>
   );
