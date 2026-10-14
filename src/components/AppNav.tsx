@@ -1,20 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignOutButton } from "@/components/SignOutButton";
-import { Button } from "@/components/ui/button";
 import {
   segmentedControlItemVariants,
   segmentedControlRootClassName,
 } from "@/lib/segmented-control";
 
-const publicNavItems = [
+const scaneeNavItems = [
   { href: "/", label: "Register" },
   { href: "/retrieve", label: "Retrieve" },
 ] as const;
 
-const adminNavItems = [
+const orgNavItems = [
   { href: "/scanner", label: "Scanner" },
 ] as const;
 
@@ -57,38 +55,22 @@ function SegmentedPageNav({
   );
 }
 
-function isPublicPath(pathname: string) {
-  return pathname === "/" || pathname === "/retrieve";
-}
-
-export function AppNav() {
+export function AppNav({ isOrgAccount = false }: { isOrgAccount?: boolean }) {
   const pathname = usePathname();
 
-  if (isPublicPath(pathname)) {
+  if (isOrgAccount) {
     return (
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
-        <SegmentedPageNav items={publicNavItems} pathname={pathname} />
-        <Button
-          onFocus={preloadScanner}
-          onMouseEnter={preloadScanner}
-          render={<a href="/api/auth/login?next=/scanner" />}
-          size="sm"
-        >
-          Admin
-        </Button>
+        <SegmentedPageNav items={orgNavItems} pathname={pathname} />
+        <SignOutButton />
       </div>
     );
   }
 
   return (
     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:gap-3">
-      <SegmentedPageNav items={adminNavItems} pathname={pathname} />
-      <div className="flex items-center gap-2 sm:gap-3">
-        <Button render={<Link href="/" />} size="sm">
-          Register
-        </Button>
-        <SignOutButton />
-      </div>
+      <SegmentedPageNav items={scaneeNavItems} pathname={pathname} />
+      <SignOutButton />
     </div>
   );
 }

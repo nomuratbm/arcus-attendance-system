@@ -27,15 +27,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/scanner",
-    "/scanner/:path*",
-    "/organizations",
-    "/organizations/:path*",
-    "/api/member",
-    "/api/member/:path*",
-    "/api/checkin",
-    "/api/checkin/:path*",
-    "/api/events",
-    "/api/events/:path*",
+    "/",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

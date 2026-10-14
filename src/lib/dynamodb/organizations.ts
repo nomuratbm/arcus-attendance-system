@@ -3,51 +3,30 @@ import "server-only";
 import {
   BatchGetCommand,
   GetCommand,
-  PutCommand,
-  QueryCommand,
-  UpdateCommand,
+  ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
-import {
-  normalizeOrganizationName,
-} from "@/lib/organization-csv";
 import type { OrganizationOption } from "@/lib/organizations";
 import {
   organizationIdFromKey,
   organizationItemKey,
 } from "@/store/dynamodb-keys";
 
-export const ORGANIZATION_GSI4PK = "ORGANIZATION";
-export const ORGANIZATION_GSI4_NAME = "GSI4";
+/**
+ * Organizations are owned by the mapua-apex backend: one item per org at
+ * PK = SK = ORGANIZATION#<uuid> carrying `name` (plus `signatories` and
+ * `is_higher_council`, which this app does not read). The former arcus-shaped
+ * registry (org_name / normalized_org_name / GSI4) is deprecated — orgs are
+ * created and edited in the apex admin, never here. This module is read-only.
+ */
 
-type OrganizationRecord = OrganizationOption & {
-  normalizedName: string;
-};
-
-export type OrganizationImportRow = {
-  name: string;
-  organizationId: string;
-  organizationIdProvided: boolean;
-  rowNumber: number;
-};
-
-export class OrganizationImportError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OrganizationImportError";
-  }
-}
-
-export type OrganizationImportResult = {
-  name: string;
-  status: "created" | "updated";
-};
+type OrganizationRecord = OrganizationOption;
 
 export async function listOrganizations(): Promise<OrganizationOption[]> {
-  return (await listOrganizationRecords()).map(({ label, value }) => ({
-    label,
-    value,
-  }));
+  const records = await listOrganizationRecords();
+  return records
+    .map(({ label, value }) => ({ label, value }))
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 export async function getOrganization(
@@ -58,7 +37,7 @@ export async function getOrganization(
     new GetCommand({
       TableName: tableName(),
       Key: { PK: key, SK: key },
-      ProjectionExpression: "PK, SK, org_name, normalized_org_name",
+      ProjectionExpression: "PK, SK, name",
     }),
   );
 
@@ -93,7 +72,7 @@ export async function getOrganizations(
           RequestItems: {
             [name]: {
               Keys: keys,
-              ProjectionExpression: "PK, SK, org_name, normalized_org_name",
+              ProjectionExpression: "PK, SK, name",
             },
           },
         }),
@@ -124,94 +103,22 @@ export async function getOrganizations(
   });
 }
 
-export async function upsertOrganizations(
-  rows: OrganizationImportRow[],
-): Promise<OrganizationImportResult[]> {
-  const existing = await listOrganizationRecords();
-  const byNormalizedName = new Map(
-    existing.map((organization) => [
-      organization.normalizedName,
-      organization,
-    ]),
-  );
-  const byOrganizationId = new Map(
-    existing.map((organization) => [organization.value, organization]),
-  );
-  const results: OrganizationImportResult[] = [];
-
-  for (let offset = 0; offset < rows.length; offset += 10) {
-    const chunk = rows.slice(offset, offset + 10);
-    const chunkResults = await Promise.all(
-      chunk.map(async (row): Promise<OrganizationImportResult> => {
-        const normalizedName = normalizeOrganizationName(row.name);
-        const existingOrganization = byNormalizedName.get(normalizedName);
-
-        if (existingOrganization) {
-          if (
-            row.organizationIdProvided &&
-            row.organizationId !== existingOrganization.value
-          ) {
-            throw new OrganizationImportError(
-              `Row ${row.rowNumber} uses UUID "${row.organizationId}" for "${row.name}", but that organization already uses UUID "${existingOrganization.value}".`,
-            );
-          }
-          await updateOrganization(
-            existingOrganization.value,
-            row.name,
-            normalizedName,
-          );
-          return { name: row.name, status: "updated" };
-        }
-
-        const organizationWithId = byOrganizationId.get(row.organizationId);
-        if (organizationWithId) {
-          throw new OrganizationImportError(
-            `Row ${row.rowNumber} uses UUID "${row.organizationId}", which already belongs to "${organizationWithId.label}".`,
-          );
-        }
-
-        await createOrganization(
-          row.organizationId,
-          row.name,
-          normalizedName,
-        );
-        byNormalizedName.set(normalizedName, {
-          label: row.name,
-          normalizedName,
-          value: row.organizationId,
-        });
-        byOrganizationId.set(row.organizationId, {
-          label: row.name,
-          normalizedName,
-          value: row.organizationId,
-        });
-        return { name: row.name, status: "created" };
-      }),
-    );
-    results.push(...chunkResults);
-  }
-
-  return results;
-}
-
 async function listOrganizationRecords(): Promise<OrganizationRecord[]> {
   const records: OrganizationRecord[] = [];
   let exclusiveStartKey: Record<string, unknown> | undefined;
 
   do {
     const result = await dynamodb.send(
-      new QueryCommand({
+      new ScanCommand({
         ...(exclusiveStartKey
           ? { ExclusiveStartKey: exclusiveStartKey }
           : {}),
         TableName: tableName(),
-        IndexName: ORGANIZATION_GSI4_NAME,
-        KeyConditionExpression: "GSI4PK = :organization",
+        FilterExpression: "begins_with(PK, :prefix) AND PK = SK",
         ExpressionAttributeValues: {
-          ":organization": ORGANIZATION_GSI4PK,
+          ":prefix": "ORGANIZATION#",
         },
-        ProjectionExpression: "PK, SK, org_name, normalized_org_name",
-        ScanIndexForward: true,
+        ProjectionExpression: "PK, SK, name",
       }),
     );
 
@@ -232,59 +139,12 @@ async function listOrganizationRecords(): Promise<OrganizationRecord[]> {
   return records;
 }
 
-async function createOrganization(
-  organizationId: string,
-  name: string,
-  normalizedName: string,
-): Promise<void> {
-  const key = organizationItemKey(organizationId);
-  await dynamodb.send(
-    new PutCommand({
-      TableName: tableName(),
-      Item: {
-        PK: key,
-        SK: key,
-        GSI4PK: ORGANIZATION_GSI4PK,
-        GSI4SK: `${normalizedName}#${organizationId}`,
-        organization_id: organizationId,
-        org_name: name,
-        normalized_org_name: normalizedName,
-      },
-      ConditionExpression: "attribute_not_exists(PK)",
-    }),
-  );
-}
-
-async function updateOrganization(
-  organizationId: string,
-  name: string,
-  normalizedName: string,
-): Promise<void> {
-  const key = organizationItemKey(organizationId);
-  await dynamodb.send(
-    new UpdateCommand({
-      TableName: tableName(),
-      Key: { PK: key, SK: key },
-      UpdateExpression:
-        "SET GSI4PK = :gsi4pk, GSI4SK = :gsi4sk, organization_id = :organizationId, org_name = :name, normalized_org_name = :normalizedName REMOVE crypto_key",
-      ExpressionAttributeValues: {
-        ":gsi4pk": ORGANIZATION_GSI4PK,
-        ":gsi4sk": `${normalizedName}#${organizationId}`,
-        ":organizationId": organizationId,
-        ":name": name,
-        ":normalizedName": normalizedName,
-      },
-      ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
-    }),
-  );
-}
-
 function organizationFromRecord(
   item: Record<string, unknown>,
 ): OrganizationRecord | null {
   const pk = typeof item.PK === "string" ? item.PK : "";
   const sk = typeof item.SK === "string" ? item.SK : "";
-  const label = typeof item.org_name === "string" ? item.org_name.trim() : "";
+  const label = typeof item.name === "string" ? item.name.trim() : "";
   const value = organizationIdFromKey(pk);
 
   if (
@@ -296,11 +156,5 @@ function organizationFromRecord(
     return null;
   }
 
-  const normalizedName =
-    typeof item.normalized_org_name === "string" &&
-    item.normalized_org_name.trim()
-      ? item.normalized_org_name
-      : normalizeOrganizationName(label);
-
-  return { label, normalizedName, value };
+  return { label, value };
 }

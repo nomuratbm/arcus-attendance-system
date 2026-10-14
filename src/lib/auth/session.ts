@@ -1,15 +1,16 @@
 import "server-only";
 
 import { CognitoJwtVerifier } from "aws-jwt-verify";
-import {
-  CognitoJwtInvalidGroupError,
-  JwtExpiredError,
-} from "aws-jwt-verify/error";
+import { JwtExpiredError } from "aws-jwt-verify/error";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { refreshAccessToken, type CognitoTokenSet } from "@/lib/auth/cognito";
 import { getCognitoConfig } from "@/lib/auth/config";
+import {
+  isScannerOperator,
+  landingPath,
+} from "@/lib/auth/roles";
 import {
   ACCESS_COOKIE,
   OAUTH_NEXT_COOKIE,
@@ -56,7 +57,6 @@ export type AccessVerification =
 type AccessVerifier = ReturnType<
   typeof CognitoJwtVerifier.create<{
     clientId: string;
-    groups: string[];
     tokenUse: "access";
     userPoolId: string;
   }>
@@ -88,20 +88,21 @@ function getAccessVerifier(): AccessVerifier {
     const config = getCognitoConfig();
     accessVerifier = CognitoJwtVerifier.create({
       clientId: config.clientId,
-      // Accept the admin, super-admin, or org_submitter group (aws-jwt-verify
-      // treats an array as "at least one overlap"). org_submitters operate the
-      // scanner with the same access as admins; super-admin-only pages still
-      // re-check the super-admin group separately.
-      groups: [
-        config.superAdminGroup,
-        config.orgSubmitterGroup,
-      ],
+      // No group requirement here: every signed-in user verifies `ok`, and the
+      // guards layer role checks (organization claim or operator group) on
+      // top. Enforcing groups at the verifier would reject scanees outright.
       tokenUse: "access",
       userPoolId: config.userPoolId,
     });
   }
 
   return accessVerifier;
+}
+
+/** Group names that grant scanner-operator access without an organization claim. */
+function operatorGroups(): string[] {
+  const config = getCognitoConfig();
+  return [config.superAdminGroup, config.orgSubmitterGroup, config.adminGroup];
 }
 
 function getIdVerifier(): IdVerifier {
@@ -190,10 +191,6 @@ export async function verifyAccessToken(
       return { status: "expired" };
     }
 
-    if (error instanceof CognitoJwtInvalidGroupError) {
-      return { status: "forbidden" };
-    }
-
     return { status: "invalid" };
   }
 }
@@ -233,7 +230,11 @@ export async function persistRefreshedSession(): Promise<AccessVerification> {
     }
 
     applyTokenCookies(cookieStore, tokens);
-    return { status: "ok", groups: verified.groups };
+    return {
+      status: "ok",
+      groups: verified.groups,
+      organizationId: verified.organizationId,
+    };
   } catch (error) {
     console.error("Failed to refresh Cognito session:", error);
     return { status: "invalid" };
@@ -244,6 +245,9 @@ export async function requireAdminPage(returnPath: string): Promise<void> {
   const verified = await verifyAccessCookie();
 
   if (verified.status === "ok") {
+    if (!isScannerOperator(verified, operatorGroups())) {
+      redirect("/forbidden");
+    }
     return;
   }
 
@@ -298,6 +302,9 @@ export async function requireAdminApi(): Promise<NextResponse | null> {
   }
 
   if (verified.status === "ok") {
+    if (!isScannerOperator(verified, operatorGroups())) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     return null;
   }
 
@@ -306,6 +313,51 @@ export async function requireAdminApi(): Promise<NextResponse | null> {
   }
 
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+export type SessionIdentity = {
+  organizationId: string | null;
+  groups: string[];
+};
+
+/**
+ * Verified identity for the current request, or null when no usable session
+ * exists (missing, invalid, or an un-refreshable expiry). Never redirects —
+ * safe to call from a server component deciding where to route a user.
+ */
+export async function getSessionIdentity(): Promise<SessionIdentity | null> {
+  let verified = await verifyAccessCookie();
+
+  if (verified.status === "expired" || verified.status === "missing") {
+    verified = await persistRefreshedSession();
+  }
+
+  if (verified.status !== "ok") {
+    return null;
+  }
+
+  return {
+    organizationId: verified.organizationId ?? null,
+    groups: verified.groups ?? [],
+  };
+}
+
+/** Where a signed-in visitor should land: "/scanner" for operators, "/" otherwise. */
+export async function getLandingPath(): Promise<"/" | "/scanner"> {
+  const identity = await getSessionIdentity();
+  if (!identity) {
+    return "/";
+  }
+  return landingPath(identity, operatorGroups());
+}
+
+/** "operator" can reach /scanner; "scanee" registers and shows their own QR. */
+export async function currentAudience(): Promise<"operator" | "scanee"> {
+  const identity = await getSessionIdentity();
+  if (!identity) {
+    return "scanee";
+  }
+  return isScannerOperator(identity, operatorGroups()) ? "operator" : "scanee";
 }
 
 export type AdminApiIdentity = {
@@ -328,6 +380,13 @@ export async function requireAdminApiWithIdentity(): Promise<AdminApiIdentity> {
   }
 
   if (verified.status === "ok") {
+    if (!isScannerOperator(verified, operatorGroups())) {
+      return {
+        unauthorized: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+        organizationId: null,
+        groups: [],
+      };
+    }
     return {
       unauthorized: null,
       organizationId: verified.organizationId ?? null,
