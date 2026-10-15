@@ -22,6 +22,7 @@ import {
 
 export {
   ACCESS_COOKIE,
+  ID_COOKIE,
   OAUTH_NEXT_COOKIE,
   OAUTH_NONCE_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -31,6 +32,7 @@ export {
 
 const OAUTH_COOKIE_MAX_AGE = 60 * 10;
 const REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const ID_TOKEN_COOKIE = "cognito_id";
 
 type CookieWriter = {
   delete: (name: string) => void;
@@ -124,6 +126,10 @@ export function applyTokenCookies(
 ): void {
   store.set(ACCESS_COOKIE, tokens.accessToken, cookieOptions(REFRESH_COOKIE_MAX_AGE));
 
+  if (tokens.idToken) {
+    store.set(ID_TOKEN_COOKIE, tokens.idToken, cookieOptions(REFRESH_COOKIE_MAX_AGE));
+  }
+
   if (tokens.refreshToken) {
     store.set(
       REFRESH_COOKIE,
@@ -135,6 +141,7 @@ export function applyTokenCookies(
 
 export function clearAuthCookies(store: CookieWriter): void {
   store.delete(ACCESS_COOKIE);
+  store.delete(ID_TOKEN_COOKIE);
   store.delete(REFRESH_COOKIE);
   store.delete(OAUTH_STATE_COOKIE);
   store.delete(OAUTH_VERIFIER_COOKIE);
@@ -210,9 +217,68 @@ export async function verifyIdToken(
   });
 }
 
+type IdTokenClaims = {
+  organizationId?: string;
+  studentId?: string;
+  sub: string;
+};
+
+/** Custom attributes are on the ID token. Access tokens omit them unless a pre-token trigger copies them. */
+export async function readIdTokenClaims(token: string | undefined): Promise<IdTokenClaims | null> {
+  if (!token) {
+    debugIdToken("no ID token cookie");
+    return null;
+  }
+
+  try {
+    const payload = await getIdVerifier().verify(token);
+    debugIdToken(
+      `ID token verified; custom:student_id ${claimText(payload["custom:student_id"]) ? "present" : "absent"}; custom claim keys: ${Object.keys(payload).filter((key) => key.startsWith("custom:")).join(", ") || "none"}`,
+    );
+    return {
+      organizationId: claimText(payload["custom:organization_id"]),
+      studentId: claimText(payload["custom:student_id"]),
+      sub: payload.sub,
+    };
+  } catch (error) {
+    debugIdToken(`ID token rejected: ${error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"}`);
+    return null;
+  }
+}
+
+function debugIdToken(message: string): void {
+  if (process.env.NODE_ENV !== "production") {
+    console.info(`[auth debug] ${message}`);
+  }
+}
+
+function claimText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function mergeIdTokenClaims(
+  verified: AccessVerification,
+  claims: IdTokenClaims | null,
+): AccessVerification {
+  if (verified.status === "ok" && claims && claims.sub !== verified.sub) {
+    debugIdToken("ID token sub does not match access token sub; ignoring ID token claims");
+  }
+  if (verified.status !== "ok" || !claims || claims.sub !== verified.sub) {
+    return verified;
+  }
+
+  return {
+    ...verified,
+    organizationId: verified.organizationId ?? claims.organizationId,
+    studentId: verified.studentId ?? claims.studentId,
+  };
+}
+
 export async function verifyAccessCookie(): Promise<AccessVerification> {
   const cookieStore = await cookies();
-  return verifyAccessToken(cookieStore.get(ACCESS_COOKIE)?.value);
+  const verified = await verifyAccessToken(cookieStore.get(ACCESS_COOKIE)?.value);
+  const claims = await readIdTokenClaims(cookieStore.get(ID_TOKEN_COOKIE)?.value);
+  return mergeIdTokenClaims(verified, claims);
 }
 
 export async function persistRefreshedSession(): Promise<AccessVerification> {
@@ -232,7 +298,7 @@ export async function persistRefreshedSession(): Promise<AccessVerification> {
     }
 
     applyTokenCookies(cookieStore, tokens);
-    return verified;
+    return mergeIdTokenClaims(verified, await readIdTokenClaims(tokens.idToken));
   } catch (error) {
     console.error("Failed to refresh Cognito session:", error);
     return { status: "invalid" };

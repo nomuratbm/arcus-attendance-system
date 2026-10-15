@@ -51,6 +51,7 @@ type QrStudentContext = {
 type ErrorModal = {
   title: string;
   description: string;
+  studentId?: string;
 };
 
 function isExistingQrResponse(data: unknown): boolean {
@@ -129,6 +130,7 @@ export function StudentDetailsForm() {
   const submitting = useStudentFormStore((state) => state.submitting);
   const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
   const [errorModal, setErrorModal] = useState<ErrorModal | null>(null);
+  const [syncingAccount, setSyncingAccount] = useState(false);
   const [qrStudentContext, setQrStudentContext] =
     useState<QrStudentContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -200,11 +202,12 @@ export function StudentDetailsForm() {
         clear();
         setQrStudentContext(null);
         setErrorModal({
-          title: "QR code already exists",
+          title: "Student record already exists",
           description: apiErrorMessage(
             data,
-            "This student number already has a QR code. Use Retrieve to get the existing code.",
+            "This student number already has a student record. Sync account links it to this sign-in.",
           ),
+          studentId: studentNumber,
         });
         return;
       }
@@ -243,6 +246,46 @@ export function StudentDetailsForm() {
       });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleSyncAccount() {
+    const studentId = errorModal?.studentId;
+    if (!studentId) {
+      return;
+    }
+
+    setSyncingAccount(true);
+    try {
+      const response = await fetch("/api/forms/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: studentId }),
+      });
+      const data = await readResponseJson(response);
+      if (!response.ok) {
+        setErrorModal({
+          title: "Account sync failed",
+          description: apiErrorMessage(data, "The account sync could not be queued. Try again."),
+          studentId,
+        });
+        return;
+      }
+      setErrorModal({
+        title: "Account sync queued",
+        description: apiErrorMessage(
+          data,
+          "Sign out and sign in again. Your QR code appears after the new sign-in.",
+        ),
+      });
+    } catch (error) {
+      setErrorModal({
+        title: "Account sync failed",
+        description: requestErrorMessage(error, "The account sync could not be queued. Try again."),
+        studentId,
+      });
+    } finally {
+      setSyncingAccount(false);
     }
   }
 
@@ -353,7 +396,7 @@ export function StudentDetailsForm() {
       </Card>
       <Dialog
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !syncingAccount) {
             setErrorModal(null);
           }
         }}
@@ -367,7 +410,18 @@ export function StudentDetailsForm() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="ghost" />}>
+            {errorModal?.studentId ? (
+              <Button
+                disabled={syncingAccount}
+                onClick={() => void handleSyncAccount()}
+                type="button"
+              >
+                {syncingAccount ? "Syncing account..." : "Sync account"}
+              </Button>
+            ) : null}
+            <DialogClose
+              render={<Button disabled={syncingAccount} type="button" variant="ghost" />}
+            >
               OK
             </DialogClose>
           </DialogFooter>

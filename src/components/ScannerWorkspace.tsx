@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { EventSelector } from "@/components/EventSelector";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   apiErrorMessage,
   readResponseJson,
@@ -83,7 +84,13 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
   );
 }
 
-export function ScannerWorkspace() {
+export function ScannerWorkspace({
+  organizationError,
+  organizationName,
+}: {
+  organizationError: string | null;
+  organizationName: string | null;
+}) {
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
 
   useEffect(() => {
@@ -202,9 +209,23 @@ export function ScannerWorkspace() {
 
   return (
     <main className="mx-auto w-full max-w-5xl min-w-0 space-y-6 overflow-x-clip px-4 py-8 sm:px-6">
-      <EventSelector />
-      <QRScanner />
-      <AttendanceDashboard />
+      {organizationError ? (
+        <Alert variant="error">
+          <AlertTitle>Organization not found</AlertTitle>
+          <AlertDescription>{organizationError}</AlertDescription>
+        </Alert>
+      ) : (
+        <>
+          {organizationName ? (
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              {organizationName} Attendance Dashboard
+            </h2>
+          ) : null}
+          <EventSelector />
+          <QRScanner />
+          <AttendanceDashboard />
+        </>
+      )}
     </main>
   );
 }

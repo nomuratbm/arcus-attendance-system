@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerStudent } from "@/lib/dynamodb/students";
+import { getStudent, registerStudent } from "@/lib/dynamodb/students";
 import { parseStudentRegistrationInput } from "@/lib/student-registration";
 import { verifySessionApi } from "@/lib/auth/session";
 import { syncStudentId } from "@/lib/student-id-sync";
@@ -7,6 +7,17 @@ import { validateStudentNumber } from "@/lib/student-validation";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
+
+function existingStudentResponse() {
+  return NextResponse.json(
+    {
+      error:
+            "This student number already has a student record. Sync account links it to this sign-in.",
+      code: "existing-qr",
+    },
+    { status: 409 },
+  );
+}
 
 export async function POST(request: NextRequest) {
   const identity = await verifySessionApi();
@@ -46,6 +57,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (await getStudent(studentId)) {
+      return existingStudentResponse();
+    }
+
     const result = await registerStudent({
       full_name: fullName,
       student_id: studentId,
@@ -54,14 +69,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (result.status === "exists") {
-      return NextResponse.json(
-        {
-          error:
-            "This student number already has a QR code. Use Retrieve to get the existing code.",
-          code: "existing-qr",
-        },
-        { status: 409 },
-      );
+      return existingStudentResponse();
     }
 
     await syncStudentId(identity, studentId);
