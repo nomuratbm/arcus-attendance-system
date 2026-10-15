@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { EventSelector } from "@/components/EventSelector";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   apiErrorMessage,
@@ -20,13 +21,38 @@ import {
   type AttendanceEvent,
 } from "@/store/useEventsStore";
 
-const scannerPanelFallback = (
-  <div aria-hidden className="min-h-[340px] rounded-2xl border bg-card" />
-);
+function ScannerPanelSkeleton() {
+  return (
+    <div
+      aria-label="Loading scanner"
+      className="min-h-[340px] space-y-4 rounded-2xl border bg-card p-6"
+      role="status"
+    >
+      <Skeleton className="h-6 w-40" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
+function AttendanceTableSkeleton() {
+  return (
+    <div
+      aria-label="Loading attendance"
+      className="space-y-3 rounded-lg border bg-card p-4"
+      role="status"
+    >
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+      <Skeleton className="h-10 w-full" />
+    </div>
+  );
+}
 
 const QRScanner = dynamic(
   () => import("@/components/QRScanner").then((mod) => mod.QRScanner),
-  { loading: () => scannerPanelFallback, ssr: false },
+  { loading: () => <ScannerPanelSkeleton />, ssr: false },
 );
 
 const AttendanceDashboard = dynamic(
@@ -34,7 +60,7 @@ const AttendanceDashboard = dynamic(
     import("@/components/AttendanceDashboard").then(
       (mod) => mod.AttendanceDashboard,
     ),
-  { ssr: false },
+  { loading: () => <AttendanceTableSkeleton />, ssr: false },
 );
 
 function eventsFromResponse(value: unknown): AttendanceEvent[] | null {

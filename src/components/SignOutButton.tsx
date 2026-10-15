@@ -4,8 +4,9 @@ import { LogOut } from "lucide-react";
 import { useState } from "react";
 import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function SignOutButton() {
+export function SignOutButton({ className }: { className?: string }) {
   const [signingOut, setSigningOut] = useState(false);
 
   return (
@@ -23,12 +24,12 @@ export function SignOutButton() {
       ) : null}
       <Button
         aria-label="Sign out"
-        className="max-sm:size-8 max-sm:px-0"
+        className={cn("max-sm:size-8 max-sm:px-0", className)}
         loading={signingOut}
         size="sm"
         title="Sign out"
         type="submit"
-        variant="outline"
+        variant="default"
       >
         <LogOut className="sm:hidden" />
         <span className="max-sm:hidden">Sign out</span>
