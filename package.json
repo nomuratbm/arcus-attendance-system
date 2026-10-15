@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/store/merge-events.test.ts src/lib/auth/roles.test.ts src/lib/student-registration.test.ts src/lib/student-validation.test.ts"
+    "test": "node --conditions=react-server --experimental-strip-types --test src/store/merge-events.test.ts src/lib/auth/roles.test.ts src/lib/student-registration.test.ts src/lib/student-validation.test.ts src/lib/student-id-sync.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1120.0",
+    "@aws-sdk/client-lambda": "^3.1152.0",
     "@aws-sdk/lib-dynamodb": "^3.1120.0",
     "@base-ui/react": "^1.7.0",
     "@daypicker/react": "^10.0.1",

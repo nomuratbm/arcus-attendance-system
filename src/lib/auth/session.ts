@@ -52,7 +52,7 @@ export type AccessVerification =
   | { status: "forbidden" }
   | { status: "invalid" }
   | { status: "missing" }
-  | { status: "ok"; groups?: string[]; organizationId?: string };
+  | { status: "ok"; groups?: string[]; organizationId?: string; studentId?: string; sub: string; username: string };
 
 type AccessVerifier = ReturnType<
   typeof CognitoJwtVerifier.create<{
@@ -185,7 +185,9 @@ export async function verifyAccessToken(
       typeof rawOrganizationId === "string" && rawOrganizationId.trim()
         ? rawOrganizationId.trim()
         : undefined;
-    return { status: "ok", groups, organizationId };
+    const rawStudentId = payload["custom:student_id"];
+    const studentId = typeof rawStudentId === "string" ? rawStudentId.trim() || undefined : undefined;
+    return { status: "ok", groups, organizationId, studentId, sub: payload.sub, username: payload.username }; 
   } catch (error) {
     if (error instanceof JwtExpiredError) {
       return { status: "expired" };
@@ -230,11 +232,7 @@ export async function persistRefreshedSession(): Promise<AccessVerification> {
     }
 
     applyTokenCookies(cookieStore, tokens);
-    return {
-      status: "ok",
-      groups: verified.groups,
-      organizationId: verified.organizationId,
-    };
+    return verified;
   } catch (error) {
     console.error("Failed to refresh Cognito session:", error);
     return { status: "invalid" };
@@ -291,6 +289,9 @@ export async function requireAdminApi(): Promise<NextResponse | null> {
 export type SessionIdentity = {
   organizationId: string | null;
   groups: string[];
+  studentId: string | null;
+  sub: string;
+  username: string;
 };
 
 /**
@@ -299,11 +300,7 @@ export type SessionIdentity = {
  * safe to call from a server component deciding where to route a user.
  */
 export async function getSessionIdentity(): Promise<SessionIdentity | null> {
-  let verified = await verifyAccessCookie();
-
-  if (verified.status === "expired" || verified.status === "missing") {
-    verified = await persistRefreshedSession();
-  }
+  const verified = await verifyAccessCookie();
 
   if (verified.status !== "ok") {
     return null;
@@ -312,7 +309,24 @@ export async function getSessionIdentity(): Promise<SessionIdentity | null> {
   return {
     organizationId: verified.organizationId ?? null,
     groups: verified.groups ?? [],
+    studentId: verified.studentId ?? null,
+    sub: verified.sub,
+    username: verified.username,
   };
+}
+
+export async function requireStudentPage(returnPath: string): Promise<SessionIdentity> {
+  const identity = await getSessionIdentity();
+  if (identity) return identity;
+  const jar = await cookies();
+  const action = jar.get(REFRESH_COOKIE)?.value ? "refresh" : "login";
+  redirect(`/api/auth/${action}?next=${encodeURIComponent(returnPath)}`);
+}
+
+export async function verifySessionApi(): Promise<AccessVerification> {
+  const verified = await verifyAccessCookie();
+  return verified.status === "expired" || verified.status === "missing"
+    ? persistRefreshedSession() : verified;
 }
 
 /** Where a signed-in visitor should land: "/scanner" for operators, "/" otherwise. */
