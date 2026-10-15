@@ -5,10 +5,15 @@ import { Html5Qrcode } from "html5-qrcode";
 import QrScanner from "qr-scanner";
 import { AsyncLoadingOverlay } from "@/components/AsyncLoadingOverlay";
 import {
-  memberFromDynamoItem,
+  studentFromDynamoItem,
   useAttendanceStore,
 } from "@/store/useAttendanceStore";
 import { useEventsStore } from "@/store/useEventsStore";
+import {
+  memberItemKey,
+  organizationIdFromKey,
+  studentIdFromKey,
+} from "@/store/dynamodb-keys";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +55,7 @@ export function QRScanner() {
   const isProcessingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const { setCurrentMember, addAttendanceRecord, updateLeftAt, setScanStatus, setAlert } = useAttendanceStore();
+  const { setCurrentStudent, addAttendanceRecord, updateLeftAt, removeAttendanceRecord, setScanStatus, setAlert } = useAttendanceStore();
   const alertMessage = useAttendanceStore((state) => state.alertMessage);
   const selectedEventPK = useEventsStore((state) => state.selectedEventPK);
   const canScan = Boolean(selectedEventPK);
@@ -86,7 +91,7 @@ export function QRScanner() {
 
       try {
         const response = await fetch(
-          `/api/member?student_id=${encodeURIComponent(trimmedStudentId)}`,
+          `/api/student?student_id=${encodeURIComponent(trimmedStudentId)}`,
         );
         const data = await readResponseJson(response);
         const dataRecord =
@@ -97,36 +102,43 @@ export function QRScanner() {
           dataRecord &&
           "valid" in dataRecord &&
           dataRecord.valid === true &&
-          "member" in dataRecord &&
-          dataRecord.member &&
-          typeof dataRecord.member === "object"
+          "student" in dataRecord &&
+          dataRecord.student &&
+          typeof dataRecord.student === "object"
         ) {
-          const member = memberFromDynamoItem(
-            dataRecord.member as Record<string, unknown>,
+          const student = studentFromDynamoItem(
+            dataRecord.student as Record<string, unknown>,
             trimmedStudentId,
           );
-          setCurrentMember(member);
+          setCurrentStudent(student);
 
-          const scanMode = useAttendanceStore.getState().scanTimestampMode;
-          const eventPK = useEventsStore.getState().selectedEventPK;
-          const memberSK = member.SK || member.PK;
-          const existingRecord = useAttendanceStore
-            .getState()
-            .attendanceHistory.find(
-              (item) => item.PK === eventPK && item.SK === memberSK,
-            );
+          const attendanceState = useAttendanceStore.getState();
+          const eventsState = useEventsStore.getState();
+          const scanMode = attendanceState.scanTimestampMode;
+          const membersOnly = attendanceState.membersOnlyMode;
+          const eventPK = eventsState.selectedEventPK;
+          const selectedEvent = eventsState.events.find(
+            (item) => item.PK === eventPK,
+          );
+          const organizationId = selectedEvent?.GSI3SK
+            ? organizationIdFromKey(selectedEvent.GSI3SK)
+            : "";
+          const checkInSK = memberItemKey(student.student_id);
+          const existingRecord = attendanceState.attendanceHistory.find(
+            (item) => item.PK === eventPK && item.SK === checkInSK,
+          );
 
           if (scanMode === "leftAt") {
             if (!existingRecord) {
               setScanStatus("error");
               setAlert(
                 "error",
-                `${member.full_name || "Member"} is not checked in to this event`,
+                `${student.full_name || "Student"} is not checked in to this event`,
               );
               return;
             }
 
-            const record = updateLeftAt(member);
+            const record = updateLeftAt(student);
             if (!record) {
               setScanStatus("error");
               setAlert("error", "Select an event before scanning");
@@ -136,10 +148,10 @@ export function QRScanner() {
             setScanStatus("success");
             setAlert(
               "success",
-              `Left at ${record.leftAt}: ${member.full_name || "Member Found"}`,
+              `Left at ${record.leftAt}: ${student.full_name || "Student"}`,
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
-            const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
+            const rawStudentId = studentIdFromKey(record.SK);
             const persistError = await persistCheckIn(
               {
                 eventId: rawEventId,
@@ -160,12 +172,12 @@ export function QRScanner() {
             setScanStatus("success");
             setAlert(
               "info",
-              `Already checked in: ${member.full_name || "Member Found"}`,
+              `Already checked in: ${student.full_name || "Student"}`,
             );
             return;
           }
 
-          const record = addAttendanceRecord(member);
+          const record = addAttendanceRecord(student);
           if (!record) {
             setScanStatus("error");
             setAlert("error", "Select an event before scanning");
@@ -173,27 +185,32 @@ export function QRScanner() {
             setScanStatus("success");
             setAlert(
               "success",
-              `Checked in: ${member.full_name || "Member Found"}`,
+              `Checked in: ${student.full_name || "Student"}`,
             );
             const rawEventId = record.PK.replace(/^EVENT#/, "");
-            const rawStudentId = (record.SK || member.PK).replace(/^MEMBER#/, "");
+            const rawStudentId = studentIdFromKey(record.SK);
             const persistError = await persistCheckIn(
               {
                 eventId: rawEventId,
                 student_id: rawStudentId,
                 scannedAt: record.scannedAt,
                 timestamp: record.timestamp,
+                membersOnly,
+                organizationId,
               },
               "Could not save the check-in. Please scan again.",
               true,
             );
             if (persistError) {
+              // Roll back the optimistic local record when the server rejects
+              // the check-in (e.g. the student is not an allowed member).
+              removeAttendanceRecord(record.id);
               setScanStatus("error");
               setAlert("error", persistError);
             }
           }
         } else {
-          setCurrentMember(null);
+          setCurrentStudent(null);
           setScanStatus("error");
           setAlert(
             "error",
@@ -202,7 +219,7 @@ export function QRScanner() {
         }
       } catch (error) {
         console.error("Scan API Request Error:", error);
-        setCurrentMember(null);
+        setCurrentStudent(null);
         setScanStatus("error");
         setAlert(
           "error",
@@ -227,7 +244,7 @@ export function QRScanner() {
         }, 1500);
       }
     },
-    [setCurrentMember, addAttendanceRecord, updateLeftAt, setScanStatus, setAlert]
+    [setCurrentStudent, addAttendanceRecord, updateLeftAt, removeAttendanceRecord, setScanStatus, setAlert]
   );
 
   const startCamera = async () => {

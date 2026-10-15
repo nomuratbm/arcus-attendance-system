@@ -48,15 +48,15 @@ export function AttendanceDashboard() {
   const totalScansCount = attendanceHistory.length;
 
   const latestRecord = attendanceHistory[0];
-  const latestName = latestRecord ? latestRecord.member.full_name || "Member" : null;
+  const latestName = latestRecord ? latestRecord.student.full_name || "Student" : null;
 
   const query = searchQuery.trim().toLowerCase();
   const filteredRecords = attendanceHistory.filter((item) => {
     if (!query) return true;
-    const name = item.member.full_name.toLowerCase();
-    const id = item.member.student_id.toLowerCase();
-    const course = item.member.course.toLowerCase();
-    const department = item.member.department.toLowerCase();
+    const name = item.student.full_name.toLowerCase();
+    const id = item.student.student_id.toLowerCase();
+    const course = item.student.course.toLowerCase();
+    const department = item.student.department.toLowerCase();
 
     return (
       name.includes(query) ||
@@ -161,11 +161,11 @@ export function AttendanceDashboard() {
             <AlertDialogDescription>
               Are you sure you want to remove{" "}
               <strong className="text-foreground">
-                {recordToDelete?.member.full_name || "this attendee"}
+                {recordToDelete?.student.full_name || "this attendee"}
               </strong>{" "}
               (
               <span className="font-mono">
-                {recordToDelete?.member.student_id || "ID"}
+                {recordToDelete?.student.student_id || "ID"}
               </span>
               ) from the attendance log?
             </AlertDialogDescription>
@@ -314,9 +314,9 @@ export function AttendanceDashboard() {
                 </TableRow>
               ) : (
                 filteredRecords.map((item, index) => {
-                  const name = item.member.full_name || "—";
-                  const id = item.member.student_id || "—";
-                  const course = item.member.course || "—";
+                  const name = item.student.full_name || "—";
+                  const id = item.student.student_id || "—";
+                  const course = item.student.course || "—";
 
                   return (
                     <TableRow key={item.id} className="group">

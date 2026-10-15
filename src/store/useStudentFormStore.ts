@@ -1,25 +1,22 @@
 import { create } from "zustand";
-import { NO_ORGANIZATION_VALUE } from "@/lib/organizations";
-import { memberItemKey } from "@/store/dynamodb-keys";
-import type { Member } from "@/store/member-item";
+import { studentItemKey } from "@/store/dynamodb-keys";
+import type { Student } from "@/store/student-item";
 
 /**
- * DynamoDB Member item (registration write)
+ * DynamoDB Student item (registration write)
  *
- * PK: MEMBER#(student_id)
- * SK: MEMBER#(student_id)
+ * PK: STUDENT#(student_id)
+ * SK: STUDENT#(student_id)
  * full_name: string        // studentName
  * student_id: string       // studentNumber
  * course: string           // programYear
  * department: string
- * current_organization: string
  */
 export interface StudentFormData {
   studentName: string;
   studentNumber: string;
   programYear: string;
   department: string;
-  organizationSelection: string;
 }
 
 interface StudentFormState extends StudentFormData {
@@ -27,7 +24,7 @@ interface StudentFormState extends StudentFormData {
   setFormData: (data: Partial<StudentFormData>) => void;
   setSubmitting: (submitting: boolean) => void;
   clearFormData: () => void;
-  buildMemberItem: () => Member;
+  buildStudentItem: () => Student;
 }
 
 const emptyFormData: StudentFormData = {
@@ -35,7 +32,6 @@ const emptyFormData: StudentFormData = {
   studentNumber: "",
   programYear: "",
   department: "",
-  organizationSelection: "",
 };
 
 export const useStudentFormStore = create<StudentFormState>((set, get) => ({
@@ -47,10 +43,10 @@ export const useStudentFormStore = create<StudentFormState>((set, get) => ({
 
   clearFormData: () => set({ ...emptyFormData, submitting: false }),
 
-  buildMemberItem: () => {
+  buildStudentItem: () => {
     const state = get();
     const studentId = state.studentNumber.trim();
-    const key = memberItemKey(studentId);
+    const key = studentItemKey(studentId);
     return {
       PK: key,
       SK: key,
@@ -58,11 +54,6 @@ export const useStudentFormStore = create<StudentFormState>((set, get) => ({
       student_id: studentId,
       course: state.programYear.trim(),
       department: state.department.trim(),
-      current_organization:
-        state.organizationSelection === NO_ORGANIZATION_VALUE
-          ? ""
-          : state.organizationSelection,
-      registration_version: 0,
     };
   },
 }));

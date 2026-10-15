@@ -22,6 +22,9 @@ export async function POST(request: NextRequest) {
     const leftAt = typeof body.leftAt === "string" ? body.leftAt : undefined;
     const timestamp =
       typeof body.timestamp === "number" ? body.timestamp : undefined;
+    const membersOnly = body.membersOnly === true;
+    const organizationId =
+      typeof body.organizationId === "string" ? body.organizationId.trim() : "";
 
     if (!eventId || !studentId) {
       return NextResponse.json(
@@ -50,10 +53,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true }, { status: 200 });
     }
 
-    const result = await checkIn(eventId, studentId, {
-      scannedAt: scannedAt ?? formatAttendanceClockTime(),
-      timestamp: timestamp ?? Date.now(),
-    });
+    const result = await checkIn(
+      eventId,
+      studentId,
+      {
+        scannedAt: scannedAt ?? formatAttendanceClockTime(),
+        timestamp: timestamp ?? Date.now(),
+      },
+      { membersOnly, organizationId },
+    );
 
     if (result.status === "already-checked-in") {
       return NextResponse.json(
@@ -64,14 +72,14 @@ export async function POST(request: NextRequest) {
 
     if (result.status === "member-not-found") {
       return NextResponse.json(
-        { error: "Member not registered in the system" },
+        { error: "Student not registered in the system" },
         { status: 404 },
       );
     }
 
     if (result.status === "not-member") {
       return NextResponse.json(
-        { error: "Member does not belong to the selected organization" },
+        { error: "Student is not a member of the selected organization" },
         { status: 403 },
       );
     }

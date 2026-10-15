@@ -32,10 +32,6 @@ import { useQrCode } from "@/hooks/use-qr-code";
 import { departmentCampuses } from "@/lib/departments";
 import { cn } from "@/lib/utils";
 import {
-  NO_ORGANIZATION_VALUE,
-  type OrganizationOption,
-} from "@/lib/organizations";
-import {
   apiErrorMessage,
   readResponseJson,
   requestErrorMessage,
@@ -48,9 +44,8 @@ import {
 } from "@/lib/student-validation";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
 
-type QrMemberContext = {
+type QrStudentContext = {
   studentId: string;
-  organization: OrganizationOption | null;
 };
 
 type ErrorModal = {
@@ -65,34 +60,6 @@ function isExistingQrResponse(data: unknown): boolean {
     "code" in data &&
     data.code === "existing-qr"
   );
-}
-
-function organizationFromResponse(value: unknown): OrganizationOption | null {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("organization" in value) ||
-    value.organization === null
-  ) {
-    return null;
-  }
-
-  const organization = value.organization;
-  if (
-    typeof organization !== "object" ||
-    organization === null ||
-    !("label" in organization) ||
-    typeof organization.label !== "string" ||
-    !("value" in organization) ||
-    typeof organization.value !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    label: organization.label,
-    value: organization.value,
-  };
 }
 
 const departmentChoices = departmentCampuses.map((group) => {
@@ -162,8 +129,8 @@ export function StudentDetailsForm() {
   const submitting = useStudentFormStore((state) => state.submitting);
   const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
   const [errorModal, setErrorModal] = useState<ErrorModal | null>(null);
-  const [qrMemberContext, setQrMemberContext] =
-    useState<QrMemberContext | null>(null);
+  const [qrStudentContext, setQrStudentContext] =
+    useState<QrStudentContext | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
   const { dataUrl, generate, clear } = useQrCode();
 
@@ -212,16 +179,7 @@ export function StudentDetailsForm() {
       return;
     }
 
-    if (!formState.organizationSelection) {
-      toastManager.add({
-        type: "error",
-        title: "Select an organization option",
-        description: "Choose one organization or select No organization.",
-      });
-      return;
-    }
-
-    const memberItem = formState.buildMemberItem();
+    const studentItem = formState.buildStudentItem();
 
     setSubmitting(true);
     try {
@@ -229,14 +187,10 @@ export function StudentDetailsForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: memberItem.full_name,
-          student_id: memberItem.student_id,
-          course: memberItem.course,
-          department: memberItem.department,
-          organization_id:
-            formState.organizationSelection === NO_ORGANIZATION_VALUE
-              ? null
-              : formState.organizationSelection,
+          full_name: studentItem.full_name,
+          student_id: studentItem.student_id,
+          course: studentItem.course,
+          department: studentItem.department,
         }),
       });
 
@@ -244,7 +198,7 @@ export function StudentDetailsForm() {
 
       if (response.status === 409 && isExistingQrResponse(data)) {
         clear();
-        setQrMemberContext(null);
+        setQrStudentContext(null);
         setErrorModal({
           title: "QR code already exists",
           description: apiErrorMessage(
@@ -256,15 +210,14 @@ export function StudentDetailsForm() {
       }
 
       if (response.ok) {
-        setQrMemberContext({
-          studentId: memberItem.student_id,
-          organization: organizationFromResponse(data),
+        setQrStudentContext({
+          studentId: studentItem.student_id,
         });
-        await generate(memberItem.student_id);
+        await generate(studentItem.student_id);
         toastManager.add({
           type: "success",
           title: "Student registered",
-          description: `${memberItem.full_name} · ${memberItem.student_id} · ${memberItem.course} · ${memberItem.department}`,
+          description: `${studentItem.full_name} · ${studentItem.student_id} · ${studentItem.course} · ${studentItem.department}`,
         });
         setTimeout(() => {
           qrRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -296,7 +249,7 @@ export function StudentDetailsForm() {
   function handleClear() {
     useStudentFormStore.getState().clearFormData();
     clear();
-    setQrMemberContext(null);
+    setQrStudentContext(null);
     setFormKey((current) => current + 1);
   }
 
@@ -389,13 +342,12 @@ export function StudentDetailsForm() {
           </CardFooter>
           </Fieldset>
         </Form>
-        {dataUrl && qrMemberContext ? (
+        {dataUrl && qrStudentContext ? (
           <QrCodePreview
-            key={qrMemberContext.studentId}
+            key={qrStudentContext.studentId}
             dataUrl={dataUrl}
-            organization={qrMemberContext.organization}
             ref={qrRef}
-            studentId={qrMemberContext.studentId}
+            studentId={qrStudentContext.studentId}
           />
         ) : null}
       </Card>

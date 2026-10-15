@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerMember } from "@/lib/dynamodb/members";
-import { getOrganization } from "@/lib/dynamodb/organizations";
-import { parseMemberRegistrationInput } from "@/lib/member-registration";
+import { registerStudent } from "@/lib/dynamodb/students";
+import { parseStudentRegistrationInput } from "@/lib/student-registration";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const parsed = parseMemberRegistrationInput(body);
+    const parsed = parseStudentRegistrationInput(body);
 
     if (!parsed.ok && parsed.reason === "student-number-too-long") {
       return NextResponse.json(
@@ -27,23 +26,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const {
-      fullName,
-      studentId,
-      course,
-      department,
-      organizationId,
-    } = parsed.value;
-    const selectedOrganization = organizationId
-      ? await getOrganization(organizationId)
-      : null;
-
-    if (organizationId && !selectedOrganization) {
-      return NextResponse.json(
-        { error: "Invalid organization" },
-        { status: 400 }
-      );
-    }
+    const { fullName, studentId, course, department } = parsed.value;
 
     const tableName = process.env.DYNAMODB_TABLE_NAME;
     if (!tableName) {
@@ -53,16 +36,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await registerMember(
-      {
-        full_name: fullName,
-        student_id: studentId,
-        course,
-        department,
-        current_organization: organizationId,
-      },
-      organizationId,
-    );
+    const result = await registerStudent({
+      full_name: fullName,
+      student_id: studentId,
+      course,
+      department,
+    });
 
     if (result.status === "exists") {
       return NextResponse.json(
@@ -80,15 +59,13 @@ export async function POST(request: NextRequest) {
         success: true,
         status: result.status,
         student_id: studentId,
-        organization: selectedOrganization,
-        current_organization: organizationId,
       },
       { status: result.status === "created" ? 201 : 200 }
     );
   } catch (error) {
     console.error("Error in POST /api/forms:", error);
     return NextResponse.json(
-      { error: "Failed to register member" },
+      { error: "Failed to register student" },
       { status: 500 }
     );
   }

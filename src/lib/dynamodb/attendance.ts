@@ -1,21 +1,19 @@
 import {
-  GetCommand,
+  PutCommand,
   QueryCommand,
-  TransactWriteCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { dynamodb, tableName } from "@/lib/dynamodb/client";
 import {
-  getMember,
-  getMembers,
+  getStudent,
+  getStudents,
   isMemberOfOrganization,
-} from "@/lib/dynamodb/members";
+} from "@/lib/dynamodb/students";
 import { formatAttendanceClockTime } from "@/lib/scan-time";
 import {
   eventItemKey,
   memberItemKey,
-  organizationItemKey,
-  studentIdFromMemberKey,
+  studentIdFromKey,
 } from "@/store/dynamodb-keys";
 
 export type CheckInResult =
@@ -28,6 +26,11 @@ export type LeaveResult =
   | { status: "updated" }
   | { status: "not-checked-in" };
 
+export type CheckInOptions = {
+  membersOnly?: boolean;
+  organizationId?: string;
+};
+
 export type EventCheckIn = {
   PK: string;
   SK: string;
@@ -36,7 +39,6 @@ export type EventCheckIn = {
   course: string;
   department: string;
   member_organization: string;
-  current_organization: string;
   scannedAt: string;
   leftAt: string;
   timestamp: number;
@@ -49,21 +51,26 @@ export async function checkIn(
     scannedAt: string;
     timestamp: number;
   },
+  options?: CheckInOptions,
 ): Promise<CheckInResult> {
   const eventPK = eventItemKey(eventId);
-  const memberSK = memberItemKey(studentId);
-  const member = await getMember(studentId);
-  if (!member) {
+  // The EVENT check-in child keeps the MEMBER# prefix so apex's
+  // AggregateEventParticipants still recognizes it.
+  const checkInSK = memberItemKey(studentId);
+
+  const student = await getStudent(studentId);
+  if (!student) {
     return { status: "member-not-found" };
   }
 
-  const memberOrganization = member.current_organization.trim();
+  // Attendance is recorded under the event's organization (passed in), not a
+  // student-selected org — membership is now apex-owned.
+  const memberOrganization = (options?.organizationId ?? "").trim();
 
-  if (
-    memberOrganization &&
-    !(await isMemberOfOrganization(studentId, memberOrganization))
-  ) {
-    return { status: "not-member" };
+  if (options?.membersOnly && memberOrganization) {
+    if (!(await isMemberOfOrganization(studentId, memberOrganization))) {
+      return { status: "not-member" };
+    }
   }
 
   const now = new Date();
@@ -72,53 +79,23 @@ export async function checkIn(
 
   try {
     await dynamodb.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          ...(memberOrganization
-            ? [
-                {
-                  ConditionCheck: {
-                    TableName: tableName(),
-                    Key: {
-                      PK: organizationItemKey(memberOrganization),
-                      SK: memberSK,
-                    },
-                    ConditionExpression:
-                      "attribute_exists(PK) AND attribute_exists(SK)",
-                  },
-                },
-              ]
-            : []),
-          {
-            Put: {
-              TableName: tableName(),
-              Item: {
-                PK: eventPK,
-                SK: memberSK,
-                member_organization: memberOrganization,
-                scannedAt,
-                timestamp,
-              },
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-        ],
+      new PutCommand({
+        TableName: tableName(),
+        Item: {
+          PK: eventPK,
+          SK: checkInSK,
+          member_organization: memberOrganization,
+          scannedAt,
+          timestamp,
+        },
+        ConditionExpression: "attribute_not_exists(PK)",
       }),
     );
 
     return { status: "created" };
   } catch (error: unknown) {
-    if (isTransactionCanceled(error)) {
-      const existing = await dynamodb.send(
-        new GetCommand({
-          TableName: tableName(),
-          Key: { PK: eventPK, SK: memberSK },
-          ProjectionExpression: "PK, SK",
-        }),
-      );
-      return existing.Item
-        ? { status: "already-checked-in" }
-        : { status: "not-member" };
+    if (isConditionalCheckFailed(error)) {
+      return { status: "already-checked-in" };
     }
 
     throw error;
@@ -131,7 +108,7 @@ export async function recordLeave(
   leftAt?: string,
 ): Promise<LeaveResult> {
   const eventPK = eventItemKey(eventId);
-  const memberSK = memberItemKey(studentId);
+  const checkInSK = memberItemKey(studentId);
   const leftAtValue = leftAt ?? formatAttendanceClockTime();
 
   try {
@@ -140,7 +117,7 @@ export async function recordLeave(
         TableName: tableName(),
         Key: {
           PK: eventPK,
-          SK: memberSK,
+          SK: checkInSK,
         },
         UpdateExpression: "SET leftAt = :leftAt",
         ExpressionAttributeValues: {
@@ -165,13 +142,14 @@ export async function listEventCheckIns(
 ): Promise<EventCheckIn[]> {
   const eventPK = eventItemKey(eventId);
   const checkIns = await queryEventCheckIns(eventPK);
-  const members = await getMembers(
+  const students = await getStudents(
     checkIns.map((checkIn) => String(checkIn.SK ?? "")),
   );
 
   return checkIns.map((checkIn) => {
     const sk = String(checkIn.SK ?? "");
-    const member = members.get(sk) ?? null;
+    const studentId = studentIdFromKey(sk);
+    const student = students.get(studentId) ?? null;
     const timestamp =
       typeof checkIn.timestamp === "number"
         ? checkIn.timestamp
@@ -180,15 +158,14 @@ export async function listEventCheckIns(
     return {
       PK: typeof checkIn.PK === "string" && checkIn.PK ? checkIn.PK : eventPK,
       SK: sk,
-      full_name: member?.full_name ?? "",
-      student_id: member?.student_id || studentIdFromMemberKey(sk),
-      course: member?.course ?? "",
-      department: member?.department ?? "",
+      full_name: student?.full_name ?? "",
+      student_id: student?.student_id || studentId,
+      course: student?.course ?? "",
+      department: student?.department ?? "",
       member_organization:
         typeof checkIn.member_organization === "string"
           ? checkIn.member_organization
           : "",
-      current_organization: member?.current_organization ?? "",
       scannedAt: clockValue(checkIn.scannedAt),
       leftAt: clockValue(checkIn.leftAt),
       timestamp: Number.isFinite(timestamp) ? timestamp : 0,
@@ -247,14 +224,5 @@ function isConditionalCheckFailed(error: unknown): boolean {
     error !== null &&
     "name" in error &&
     (error as { name: string }).name === "ConditionalCheckFailedException"
-  );
-}
-
-function isTransactionCanceled(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: string }).name === "TransactionCanceledException"
   );
 }

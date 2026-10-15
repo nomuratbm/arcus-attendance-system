@@ -63,6 +63,12 @@ export function EventSelector() {
   const setScanTimestampMode = useAttendanceStore(
     (state) => state.setScanTimestampMode,
   );
+  const membersOnlyMode = useAttendanceStore(
+    (state) => state.membersOnlyMode,
+  );
+  const setMembersOnlyMode = useAttendanceStore(
+    (state) => state.setMembersOnlyMode,
+  );
 
   // Organizations are derived from the loaded mapua-apex events (each carries
   // its own organization_id / organization_name), so an org_submitter sees only
@@ -234,6 +240,24 @@ export function EventSelector() {
             {scanTimestampMode === "leftAt"
               ? "Scanning a student QR updates their left-at time. Later scans overwrite the previous time."
               : "Scanning a student QR records their entered-at check-in for this event."}
+          </FieldDescription>
+        </Field>
+        <Field className="w-full">
+          <FieldLabel>Access restriction</FieldLabel>
+          <FieldItem className="items-center gap-3">
+            <span className="text-sm">Allow members only</span>
+            <Switch
+              aria-label="Allow members only"
+              checked={membersOnlyMode}
+              onCheckedChange={(checked) => {
+                setMembersOnlyMode(checked);
+              }}
+            />
+          </FieldItem>
+          <FieldDescription>
+            {membersOnlyMode
+              ? "Only students on the selected organization's member roster can check in."
+              : "Any registered student can check in to this event."}
           </FieldDescription>
         </Field>
       </CardPanel>

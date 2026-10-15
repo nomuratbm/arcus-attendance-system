@@ -1,31 +1,35 @@
 import { create } from "zustand";
 import { formatAttendanceClockTime } from "@/lib/scan-time";
-import { memberItemKey, studentIdFromMemberKey } from "@/store/dynamodb-keys";
-import { type Member } from "@/store/member-item";
+import {
+  memberItemKey,
+  organizationIdFromKey,
+  studentIdFromKey,
+  studentItemKey,
+} from "@/store/dynamodb-keys";
+import { type Student } from "@/store/student-item";
 import { useEventsStore } from "@/store/useEventsStore";
 
 /**
- * DynamoDB Member item
+ * DynamoDB Student profile item (arcus-owned identity record)
  *
- * PK: MEMBER#(student_id)
- * SK: MEMBER#(student_id)
+ * PK: STUDENT#(student_id)
+ * SK: STUDENT#(student_id)
  * full_name: string
  * student_id: string
  * course: string
  * department: string
- * current_organization: uuid
  *
- * DynamoDB Attendance item (intended write from scan history)
+ * DynamoDB Attendance item (check-in child of an EVENT partition)
  *
  * PK: EVENT#(uuid)
- * SK: MEMBER#(uuid)
+ * SK: MEMBER#(student_id)   // kept as MEMBER# for apex's AggregateEventParticipants
  * member_organization: uuid
  * scannedAt: timestamp
  * leftAt: timestamp
  * timestamp: number
  */
 
-export type { Member } from "@/store/member-item";
+export type { Student } from "@/store/student-item";
 
 export type ScanTimestampMode = "enteredAt" | "leftAt";
 
@@ -33,7 +37,7 @@ export interface AttendanceRecord {
   id: string;
   PK: string;
   SK: string;
-  member: Member;
+  student: Student;
   member_organization: string;
   scannedAt: string;
   leftAt: string;
@@ -41,21 +45,23 @@ export interface AttendanceRecord {
 }
 
 interface AttendanceState {
-  currentMember: Member | null;
+  currentStudent: Student | null;
   attendanceHistory: AttendanceRecord[];
   attendanceLoading: boolean;
   scanTimestampMode: ScanTimestampMode;
+  membersOnlyMode: boolean;
   scanStatus: "idle" | "loading" | "success" | "error";
   alertMessage: { type: "success" | "error" | "info"; message: string } | null;
 
-  setCurrentMember: (member: Member | null) => void;
-  addAttendanceRecord: (member: Member) => AttendanceRecord | null;
-  updateLeftAt: (member: Member) => AttendanceRecord | null;
+  setCurrentStudent: (student: Student | null) => void;
+  addAttendanceRecord: (student: Student) => AttendanceRecord | null;
+  updateLeftAt: (student: Student) => AttendanceRecord | null;
   removeAttendanceRecord: (id: string) => void;
   setAttendanceHistory: (records: AttendanceRecord[]) => void;
   replaceAttendanceForEvent: (eventPK: string, records: AttendanceRecord[]) => void;
   setAttendanceLoading: (loading: boolean) => void;
   setScanTimestampMode: (mode: ScanTimestampMode) => void;
+  setMembersOnlyMode: (mode: boolean) => void;
   setScanStatus: (status: "idle" | "loading" | "success" | "error") => void;
   setAlert: (type: "success" | "error" | "info" | null, message?: string | null) => void;
   clearHistory: () => void;
@@ -65,14 +71,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function memberFromDynamoItem(
+function selectedEventOrganizationId(eventPK: string): string {
+  const event = useEventsStore
+    .getState()
+    .events.find((item) => item.PK === eventPK);
+  return event?.GSI3SK ? organizationIdFromKey(event.GSI3SK) : "";
+}
+
+export function studentFromDynamoItem(
   item: Record<string, unknown>,
   scannedStudentId: string,
-): Member {
+): Student {
   const key =
     (typeof item.PK === "string" && item.PK) ||
     (typeof item.SK === "string" && item.SK) ||
-    memberItemKey(scannedStudentId);
+    studentItemKey(scannedStudentId);
 
   return {
     PK: key,
@@ -81,17 +94,9 @@ export function memberFromDynamoItem(
     student_id:
       typeof item.student_id === "string" && item.student_id
         ? item.student_id
-        : studentIdFromMemberKey(key),
+        : studentIdFromKey(key),
     course: typeof item.course === "string" ? item.course : "",
     department: typeof item.department === "string" ? item.department : "",
-    current_organization:
-      typeof item.current_organization === "string"
-        ? item.current_organization
-        : "",
-    registration_version:
-      typeof item.registration_version === "number"
-        ? item.registration_version
-        : 0,
   };
 }
 
@@ -118,27 +123,20 @@ export function parseAttendanceRecord(
   const studentId =
     typeof raw.student_id === "string" && raw.student_id
       ? raw.student_id
-      : studentIdFromMemberKey(sk);
+      : studentIdFromKey(sk);
+  const profileKey = studentItemKey(studentId);
 
   return {
     id: `${pk}#${sk}`,
     PK: pk,
     SK: sk,
-    member: {
-      PK: sk,
-      SK: sk,
+    student: {
+      PK: profileKey,
+      SK: profileKey,
       full_name: typeof raw.full_name === "string" ? raw.full_name : "",
       student_id: studentId,
       course: typeof raw.course === "string" ? raw.course : "",
       department: typeof raw.department === "string" ? raw.department : "",
-      current_organization:
-        typeof raw.current_organization === "string"
-          ? raw.current_organization
-          : "",
-      registration_version:
-        typeof raw.registration_version === "number"
-          ? raw.registration_version
-          : 0,
     },
     member_organization:
       typeof raw.member_organization === "string"
@@ -151,24 +149,25 @@ export function parseAttendanceRecord(
 }
 
 export const useAttendanceStore = create<AttendanceState>((set, get) => ({
-  currentMember: null,
+  currentStudent: null,
   attendanceHistory: [],
   attendanceLoading: false,
   scanTimestampMode: "enteredAt",
+  membersOnlyMode: false,
   scanStatus: "idle",
   alertMessage: null,
 
-  setCurrentMember: (member) => set({ currentMember: member }),
+  setCurrentStudent: (student) => set({ currentStudent: student }),
 
-  addAttendanceRecord: (member) => {
+  addAttendanceRecord: (student) => {
     const { selectedEventPK } = useEventsStore.getState();
     if (!selectedEventPK) {
       return null;
     }
 
-    const memberSK = member.SK || member.PK;
+    const checkInSK = memberItemKey(student.student_id);
     const existing = get().attendanceHistory.find(
-      (record) => record.PK === selectedEventPK && record.SK === memberSK,
+      (record) => record.PK === selectedEventPK && record.SK === checkInSK,
     );
     if (existing) {
       return existing;
@@ -176,11 +175,11 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
     const now = new Date();
     const record: AttendanceRecord = {
-      id: `${selectedEventPK}#${memberSK}`,
+      id: `${selectedEventPK}#${checkInSK}`,
       PK: selectedEventPK,
-      SK: memberSK,
-      member,
-      member_organization: member.current_organization,
+      SK: checkInSK,
+      student,
+      member_organization: selectedEventOrganizationId(selectedEventPK),
       scannedAt: formatAttendanceClockTime(now),
       leftAt: "",
       timestamp: now.getTime(),
@@ -193,15 +192,15 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     return record;
   },
 
-  updateLeftAt: (member) => {
+  updateLeftAt: (student) => {
     const eventPK = useEventsStore.getState().selectedEventPK;
     if (!eventPK) {
       return null;
     }
 
-    const memberSK = member.SK || member.PK;
+    const checkInSK = memberItemKey(student.student_id);
     const existing = get().attendanceHistory.find(
-      (record) => record.PK === eventPK && record.SK === memberSK,
+      (record) => record.PK === eventPK && record.SK === checkInSK,
     );
     if (!existing) {
       return null;
@@ -209,7 +208,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
     const record: AttendanceRecord = {
       ...existing,
-      member: member.full_name ? member : existing.member,
+      student: student.full_name ? student : existing.student,
       leftAt: formatAttendanceClockTime(),
     };
 
@@ -252,6 +251,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
 
   setScanTimestampMode: (scanTimestampMode) => set({ scanTimestampMode }),
 
+  setMembersOnlyMode: (membersOnlyMode) => set({ membersOnlyMode }),
+
   setScanStatus: (status) => set({ scanStatus: status }),
 
   setAlert: (type, message) =>
@@ -263,7 +264,7 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
     set({
       attendanceHistory: [],
       attendanceLoading: false,
-      currentMember: null,
+      currentStudent: null,
       alertMessage: null,
     }),
 }));

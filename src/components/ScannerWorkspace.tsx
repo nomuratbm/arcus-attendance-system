@@ -141,11 +141,11 @@ export function ScannerWorkspace() {
       setAlert,
       setAttendanceHistory,
       setAttendanceLoading,
-      setCurrentMember,
+      setCurrentStudent,
       setScanStatus,
     } = useAttendanceStore.getState();
 
-    setCurrentMember(null);
+    setCurrentStudent(null);
     setScanStatus("idle");
     setAlert(null, null);
 
