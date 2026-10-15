@@ -1,11 +1,17 @@
-import { MAX_STUDENT_NUMBER_LENGTH } from "./students.ts";
+import {
+  getDepartmentItem,
+  getDepartmentPrograms,
+  getYearLevelOptions,
+} from "./academic-options.ts";
+import {
+  MAX_STUDENT_NUMBER_LENGTH,
+  STUDENT_NUMBER_PATTERN,
+  STUDENT_NUMBER_YEAR_LENGTH,
+} from "./students.ts";
 
 export type ValidationResult =
   | { ok: true }
   | { ok: false; message: string };
-
-/** Number of leading digits in a student number that encode the school year. */
-const STUDENT_NUMBER_YEAR_DIGITS = 4;
 
 /**
  * How many school years before the current one are still accepted.
@@ -13,21 +19,21 @@ const STUDENT_NUMBER_YEAR_DIGITS = 4;
  */
 const STUDENT_NUMBER_YEAR_SPAN = 9;
 
-/** Maximum number of letters allowed in a program acronym (e.g. "CS"). */
-const MAX_PROGRAM_CODE_LENGTH = 5;
+/** First name length, matching the proponent form cap. */
+export const FIRST_NAME_MIN = 2;
+export const FIRST_NAME_MAX = 35;
 
-/** Inclusive range for the year level that follows the dash (e.g. "CS-3"). */
-const MIN_PROGRAM_YEAR = 1;
-const MAX_PROGRAM_YEAR = 4;
+/** Last name length, matching the proponent form cap. */
+export const LAST_NAME_MIN = 2;
+export const LAST_NAME_MAX = 30;
 
 // Letters only: ASCII plus the Latin extended range so accented names pass.
 const NAME_ALLOWED_PATTERN = /^[A-Za-z\u00C0-\u024F' .-]+$/;
 const NAME_LETTER_PATTERN = /[A-Za-z\u00C0-\u024F]/;
 
 /**
- * Validates that a student number follows the schoolyear-sequence convention
- * (4-digit year + 6-digit sequence, e.g. 2024106767) and that the encoded year
- * falls within the current school year and the previous {@link STUDENT_NUMBER_YEAR_SPAN} years.
+ * Validates that a student number is exactly {@link MAX_STUDENT_NUMBER_LENGTH}
+ * characters: a 4-digit year, then 6 digits, with the year inside the allowed span.
  */
 export function validateStudentNumber(
   value: string,
@@ -39,21 +45,15 @@ export function validateStudentNumber(
     return { ok: false, message: "Please enter a student number." };
   }
 
-  if (!/^\d+$/.test(trimmed)) {
+  const match = STUDENT_NUMBER_PATTERN.exec(trimmed);
+  if (!match || trimmed.length !== MAX_STUDENT_NUMBER_LENGTH) {
     return {
       ok: false,
-      message: "Student number must contain digits only.",
+      message: `Student number must be a ${STUDENT_NUMBER_YEAR_LENGTH}-digit year followed by 6 digits (e.g. 2024106767).`,
     };
   }
 
-  if (trimmed.length !== MAX_STUDENT_NUMBER_LENGTH) {
-    return {
-      ok: false,
-      message: `Student number must be ${MAX_STUDENT_NUMBER_LENGTH} digits (e.g. 2024106767).`,
-    };
-  }
-
-  const year = Number(trimmed.slice(0, STUDENT_NUMBER_YEAR_DIGITS));
+  const year = Number(match[1]);
   const earliestYear = currentYear - STUDENT_NUMBER_YEAR_SPAN;
 
   if (year < earliestYear || year > currentYear) {
@@ -66,79 +66,90 @@ export function validateStudentNumber(
   return { ok: true };
 }
 
-/**
- * Validates that a student name looks like a real person's name: letters
- * (plus spaces, apostrophes, hyphens and periods) and at least two name parts.
- */
-export function validateStudentName(value: string): ValidationResult {
+function validateNamePart(
+  value: string,
+  label: "First name" | "Last name",
+  min: number,
+  max: number,
+): ValidationResult {
   const trimmed = value.trim();
 
   if (!trimmed) {
-    return { ok: false, message: "Please enter the student's full name." };
+    return { ok: false, message: `Please enter the student's ${label.toLowerCase()}.` };
   }
 
-  if (/\d/.test(trimmed)) {
-    return { ok: false, message: "Student name cannot contain numbers." };
-  }
-
-  if (!NAME_ALLOWED_PATTERN.test(trimmed)) {
+  if (trimmed.length < min || trimmed.length > max) {
     return {
       ok: false,
-      message:
-        "Student name can only contain letters, spaces, apostrophes, hyphens and periods.",
+      message: `${label} must be ${min} to ${max} characters.`,
     };
   }
 
-  const nameParts = trimmed
-    .split(/\s+/)
-    .filter((part) => NAME_LETTER_PATTERN.test(part));
-
-  if (nameParts.length < 2) {
+  if (/\d/.test(trimmed) || !NAME_ALLOWED_PATTERN.test(trimmed)) {
     return {
       ok: false,
-      message: "Enter the student's full name (at least a first and last name).",
+      message: `${label} can only contain letters, spaces, apostrophes, hyphens and periods.`,
+    };
+  }
+
+  if (!NAME_LETTER_PATTERN.test(trimmed)) {
+    return {
+      ok: false,
+      message: `${label} must include at least one letter.`,
     };
   }
 
   return { ok: true };
 }
 
+export function validateFirstName(value: string): ValidationResult {
+  return validateNamePart(value, "First name", FIRST_NAME_MIN, FIRST_NAME_MAX);
+}
+
+export function validateLastName(value: string): ValidationResult {
+  return validateNamePart(value, "Last name", LAST_NAME_MIN, LAST_NAME_MAX);
+}
+
+/** Joins the two form fields into the single full_name stored on the student. */
+export function formatStudentName(firstName: string, lastName: string): string {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+
 /**
- * Validates the program-year field, expected as ACRONYM-YEAR where the acronym
- * is at most {@link MAX_PROGRAM_CODE_LENGTH} letters and the year is between
- * {@link MIN_PROGRAM_YEAR} and {@link MAX_PROGRAM_YEAR} (e.g. "CS-3").
+ * Validates the department, program, and year chosen the same way a SAAF
+ * proponent does: the program must belong to the department, and the year
+ * must be a college year or an SHS grade for that department.
  */
-export function validateProgramYear(value: string): ValidationResult {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return { ok: false, message: "Please enter the program and year." };
+export function validateProgramAndYear(
+  department: string,
+  program: string,
+  yearLevel: string,
+): ValidationResult {
+  if (!department.trim() || !getDepartmentItem(department)) {
+    return { ok: false, message: "Select a department from the list." };
   }
 
-  const match = /^([A-Za-z]+)-(\d+)$/.exec(trimmed);
-
-  if (!match) {
+  if (!program.trim() || !yearLevel.trim()) {
     return {
       ok: false,
-      message: "Use the format PROGRAM-YEAR (e.g. CS-3).",
+      message: "Both program and year level are required.",
     };
   }
 
-  const [, code, yearText] = match;
-
-  if (code.length > MAX_PROGRAM_CODE_LENGTH) {
+  const offered = getDepartmentPrograms(department).some(
+    (item) => item.code === program,
+  );
+  if (!offered) {
     return {
       ok: false,
-      message: `Program acronym must be ${MAX_PROGRAM_CODE_LENGTH} letters or fewer (e.g. CS-3).`,
+      message: "Select a program offered by that department.",
     };
   }
 
-  const year = Number(yearText);
-
-  if (year < MIN_PROGRAM_YEAR || year > MAX_PROGRAM_YEAR) {
+  if (!getYearLevelOptions(department).includes(yearLevel)) {
     return {
       ok: false,
-      message: `Year must be between ${MIN_PROGRAM_YEAR} and ${MAX_PROGRAM_YEAR}.`,
+      message: "Select a year level for that department.",
     };
   }
 

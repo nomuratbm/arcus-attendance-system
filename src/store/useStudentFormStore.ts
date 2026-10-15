@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import {
+  formatProgramAndYear,
+  getDepartmentItem,
+} from "@/lib/academic-options";
+import { formatStudentName } from "@/lib/student-validation";
 import { studentItemKey } from "@/store/dynamodb-keys";
 import type { Student } from "@/store/student-item";
 
@@ -7,16 +12,18 @@ import type { Student } from "@/store/student-item";
  *
  * PK: STUDENT#(student_id)
  * SK: STUDENT#(student_id)
- * full_name: string        // studentName
+ * full_name: string        // first name and last name, joined
  * student_id: string       // studentNumber
- * course: string           // programYear
- * department: string
+ * course: string           // "PROGRAM - Year Level", same shape as a SAAF proponent
+ * department: string       // department code while editing; the saved item uses the school name
  */
 export interface StudentFormData {
-  studentName: string;
+  firstName: string;
+  lastName: string;
   studentNumber: string;
-  programYear: string;
   department: string;
+  program: string;
+  yearLevel: string;
 }
 
 interface StudentFormState extends StudentFormData {
@@ -28,10 +35,12 @@ interface StudentFormState extends StudentFormData {
 }
 
 const emptyFormData: StudentFormData = {
-  studentName: "",
+  firstName: "",
+  lastName: "",
   studentNumber: "",
-  programYear: "",
   department: "",
+  program: "",
+  yearLevel: "",
 };
 
 export const useStudentFormStore = create<StudentFormState>((set, get) => ({
@@ -47,13 +56,14 @@ export const useStudentFormStore = create<StudentFormState>((set, get) => ({
     const state = get();
     const studentId = state.studentNumber.trim();
     const key = studentItemKey(studentId);
+    const department = getDepartmentItem(state.department);
     return {
       PK: key,
       SK: key,
-      full_name: state.studentName.trim(),
+      full_name: formatStudentName(state.firstName, state.lastName),
       student_id: studentId,
-      course: state.programYear.trim(),
-      department: state.department.trim(),
+      course: formatProgramAndYear(state.program, state.yearLevel),
+      department: department?.name ?? state.department.trim(),
     };
   },
 }));

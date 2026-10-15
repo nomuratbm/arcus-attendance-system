@@ -21,25 +21,42 @@ import {
   DialogPopup,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldControl, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { selectTriggerVariants } from "@/components/ui/select";
-import { ChevronsUpDownIcon } from "lucide-react";
+import {
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import { useQrCode } from "@/hooks/use-qr-code";
-import { departmentCampuses } from "@/lib/departments";
-import { cn } from "@/lib/utils";
+import {
+  DEPARTMENT_GROUPS,
+  getDepartmentPrograms,
+  getYearLevelOptions,
+  programLabel,
+} from "@/lib/academic-options";
 import {
   apiErrorMessage,
   readResponseJson,
   requestErrorMessage,
 } from "@/lib/request-errors";
 import { MAX_STUDENT_NUMBER_LENGTH } from "@/lib/students";
+import { STUDENT_NUMBER_PATTERN } from "@/lib/students";
 import {
-  validateProgramYear,
-  validateStudentName,
+  FIRST_NAME_MAX,
+  FIRST_NAME_MIN,
+  LAST_NAME_MAX,
+  LAST_NAME_MIN,
+  validateFirstName,
+  validateLastName,
+  validateProgramAndYear,
   validateStudentNumber,
 } from "@/lib/student-validation";
 import { useStudentFormStore } from "@/store/useStudentFormStore";
@@ -63,70 +80,59 @@ function isExistingQrResponse(data: unknown): boolean {
   );
 }
 
-const departmentChoices = departmentCampuses.map((group) => {
-  const campusName = group.campus.replace(/ Campus$/, "");
+type Choice = { label: string; value: string };
 
-  return {
-    campus: group.campus,
-    departments: group.departments.map((department) => {
-      const sharedName = departmentCampuses.some(
-        (other) =>
-          other.campus !== group.campus &&
-          other.departments.some((name) => name === department),
-      );
-      const label = sharedName
-        ? `${department} (${campusName})`
-        : department;
+const departmentChoices: Choice[] = DEPARTMENT_GROUPS.flatMap((group) =>
+  group.departments.map((item) => ({
+    label: `${item.name} (${item.code})`,
+    value: item.code,
+  })),
+);
 
-      return { label, value: label };
-    }),
-  };
-});
+function findChoice(choices: Choice[], value: string): Choice | null {
+  return choices.find((item) => item.value === value) ?? null;
+}
 
-function DepartmentSelect({
-  defaultValue,
+function CatalogSelect({
+  choices,
   disabled,
+  onChange,
+  placeholder,
+  value,
 }: {
-  defaultValue: string;
+  choices: Choice[];
   disabled?: boolean;
+  onChange: (value: string) => void;
+  placeholder: string;
+  value: string;
 }) {
   return (
-    <div className="relative w-full">
-      <FieldControl
-        className={cn(
-          selectTriggerVariants(),
-          "w-full cursor-pointer appearance-none pe-9 pointer-coarse:after:pointer-events-none",
-        )}
-        defaultValue={defaultValue}
-        disabled={disabled}
-        onValueChange={(value) => {
-          useStudentFormStore.getState().setFormData({
-            department: value,
-          });
-        }}
-        render={
-          <select>
-            <option value="">Select department</option>
-            {departmentChoices.map((group) => (
-              <optgroup key={group.campus} label={group.campus}>
-                {group.departments.map((department) => (
-                  <option key={department.value} value={department.value}>
-                    {department.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        }
-        required
-      />
-      <ChevronsUpDownIcon className="pointer-events-none absolute end-2.5 top-1/2 size-4.5 -translate-y-1/2 opacity-80 sm:size-4" />
-    </div>
+    <Select
+      disabled={disabled}
+      isItemEqualToValue={(item, current) => item.value === current?.value}
+      items={choices}
+      onValueChange={(item) => onChange(item?.value ?? "")}
+      value={findChoice(choices, value)}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectPopup alignItemWithTrigger={false}>
+        {choices.map((item) => (
+          <SelectItem key={item.value} value={item}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
 }
 
 export function StudentDetailsForm() {
   const [formKey, setFormKey] = useState(0);
+  const department = useStudentFormStore((state) => state.department);
+  const program = useStudentFormStore((state) => state.program);
+  const yearLevel = useStudentFormStore((state) => state.yearLevel);
   const submitting = useStudentFormStore((state) => state.submitting);
   const setSubmitting = useStudentFormStore((state) => state.setSubmitting);
   const [errorModal, setErrorModal] = useState<ErrorModal | null>(null);
@@ -144,20 +150,26 @@ export function StudentDetailsForm() {
   );
 
   async function handleFormSubmit(formValues: Record<string, unknown>) {
-    const studentName = String(formValues.studentName ?? "").trim();
+    const firstName = String(formValues.firstName ?? "").trim();
+    const lastName = String(formValues.lastName ?? "").trim();
     const studentNumber = String(formValues.studentNumber ?? "").trim();
-    const programYear = String(formValues.programYear ?? "").trim();
-    const department = String(formValues.department ?? "").trim();
+    const selected = useStudentFormStore.getState();
 
     useStudentFormStore.getState().setFormData({
-      studentName,
+      firstName,
+      lastName,
       studentNumber,
-      programYear,
-      department,
     });
     const formState = useStudentFormStore.getState();
 
-    if (!studentName || !studentNumber || !programYear || !department) {
+    if (
+      !firstName ||
+      !lastName ||
+      !studentNumber ||
+      !selected.department ||
+      !selected.program ||
+      !selected.yearLevel
+    ) {
       toastManager.add({
         type: "error",
         title: "Required fields are empty",
@@ -167,9 +179,10 @@ export function StudentDetailsForm() {
     }
 
     const validationResults = [
-      validateStudentName(studentName),
+      validateFirstName(firstName),
+      validateLastName(lastName),
       validateStudentNumber(studentNumber),
-      validateProgramYear(programYear),
+      validateProgramAndYear(selected.department, selected.program, selected.yearLevel),
     ];
     const firstInvalid = validationResults.find((result) => !result.ok);
     if (firstInvalid && !firstInvalid.ok) {
@@ -315,21 +328,46 @@ export function StudentDetailsForm() {
         >
           <Fieldset className="contents" disabled={submitting}>
           <CardPanel className="flex flex-col gap-4">
-            <Field className="w-full" name="studentName">
-              <FieldLabel>Student Name</FieldLabel>
+            <Field className="w-full" name="firstName">
+              <FieldLabel>First Name</FieldLabel>
               <Input
-                autoComplete="name"
-                name="studentName"
+                autoComplete="given-name"
+                maxLength={FIRST_NAME_MAX}
+                minLength={FIRST_NAME_MIN}
+                name="firstName"
                 onChange={(event) => {
                   useStudentFormStore.getState().setFormData({
-                    studentName: event.target.value,
+                    firstName: event.target.value,
                   });
                 }}
-                placeholder="Example: John Benedict Vida"
+                placeholder="Example: John Benedict"
                 required
                 type="text"
               />
-              <FieldError>Please enter the student&apos;s full name.</FieldError>
+              <FieldError>
+                First name must be {FIRST_NAME_MIN} to {FIRST_NAME_MAX} characters.
+              </FieldError>
+            </Field>
+
+            <Field className="w-full" name="lastName">
+              <FieldLabel>Last Name</FieldLabel>
+              <Input
+                autoComplete="family-name"
+                maxLength={LAST_NAME_MAX}
+                minLength={LAST_NAME_MIN}
+                name="lastName"
+                onChange={(event) => {
+                  useStudentFormStore.getState().setFormData({
+                    lastName: event.target.value,
+                  });
+                }}
+                placeholder="Example: Vida"
+                required
+                type="text"
+              />
+              <FieldError>
+                Last name must be {LAST_NAME_MIN} to {LAST_NAME_MAX} characters.
+              </FieldError>
             </Field>
 
             <Field className="w-full" name="studentNumber">
@@ -338,41 +376,106 @@ export function StudentDetailsForm() {
                 autoComplete="off"
                 inputMode="numeric"
                 maxLength={MAX_STUDENT_NUMBER_LENGTH}
+                minLength={MAX_STUDENT_NUMBER_LENGTH}
                 name="studentNumber"
                 onChange={(event) => {
+                  const digits = event.target.value
+                    .replace(/\D/g, "")
+                    .slice(0, MAX_STUDENT_NUMBER_LENGTH);
+                  event.target.value = digits;
                   useStudentFormStore.getState().setFormData({
-                    studentNumber: event.target.value,
+                    studentNumber: digits,
                   });
                 }}
+                pattern={STUDENT_NUMBER_PATTERN.source}
                 placeholder="Example: 2024105858"
                 required
                 type="text"
               />
-              <FieldError>Please enter a student number.</FieldError>
+              <FieldError>
+                Enter a 4-digit year followed by 6 digits.
+              </FieldError>
             </Field>
 
-            <Field className="w-full" name="programYear">
-              <FieldLabel>Program - Year</FieldLabel>
-              <Input
-                autoComplete="off"
-                maxLength={7}
-                name="programYear"
-                onChange={(event) => {
+            <Field className="w-full">
+              <FieldLabel>Department</FieldLabel>
+              <Select
+                disabled={submitting}
+                isItemEqualToValue={(item, current) => item.value === current?.value}
+                items={departmentChoices}
+                onValueChange={(item) => {
+                  const code = item?.value ?? "";
+                  const current = useStudentFormStore.getState();
+                  const programs = getDepartmentPrograms(code);
+                  const years = getYearLevelOptions(code);
                   useStudentFormStore.getState().setFormData({
-                    programYear: event.target.value,
+                    department: code,
+                    program: programs.some((entry) => entry.code === current.program)
+                      ? current.program
+                      : "",
+                    yearLevel: years.some((year) => year === current.yearLevel)
+                      ? current.yearLevel
+                      : "",
                   });
                 }}
-                placeholder="Example: CS-3"
-                required
-                type="text"
-              />
-              <FieldError>Please enter the program and year.</FieldError>
+                value={findChoice(departmentChoices, department)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectPopup alignItemWithTrigger={false}>
+                  {DEPARTMENT_GROUPS.map((group) => (
+                    <SelectGroup key={group.campus}>
+                      <SelectGroupLabel>{group.campus}</SelectGroupLabel>
+                      {group.departments.map((item) => {
+                        const choice = departmentChoices.find(
+                          (entry) => entry.value === item.code,
+                        );
+                        if (!choice) {
+                          return null;
+                        }
+                        return (
+                          <SelectItem key={item.code} value={choice}>
+                            {choice.label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectGroup>
+                  ))}
+                </SelectPopup>
+              </Select>
             </Field>
 
-            <Field className="w-full" name="department">
-              <FieldLabel>Department</FieldLabel>
-              <DepartmentSelect defaultValue="" disabled={submitting} />
-              <FieldError>Please select a department.</FieldError>
+            <Field className="w-full">
+              <FieldLabel>Program</FieldLabel>
+              <CatalogSelect
+                choices={getDepartmentPrograms(department).map((item) => ({
+                  label: programLabel(item),
+                  value: item.code,
+                }))}
+                disabled={submitting || !department}
+                onChange={(value) => {
+                  useStudentFormStore.getState().setFormData({ program: value });
+                }}
+                placeholder={department ? "Select Program" : "Select Department first"}
+                value={program}
+              />
+            </Field>
+
+            <Field className="w-full">
+              <FieldLabel>Year Level</FieldLabel>
+              <CatalogSelect
+                choices={getYearLevelOptions(department).map((year) => ({
+                  label: year,
+                  value: year,
+                }))}
+                disabled={submitting}
+                onChange={(value) => {
+                  useStudentFormStore.getState().setFormData({ yearLevel: value });
+                }}
+                placeholder="Select Year"
+                value={yearLevel}
+              />
             </Field>
           </CardPanel>
           <CardFooter className="justify-end gap-2">

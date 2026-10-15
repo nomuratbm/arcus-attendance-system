@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  validateProgramYear,
-  validateStudentName,
+  validateFirstName,
+  validateLastName,
+  validateProgramAndYear,
   validateStudentNumber,
 } from "./student-validation.ts";
 
@@ -23,39 +24,42 @@ test("rejects a student number year outside the allowed span", () => {
   assert.equal(future.ok, false);
 });
 
-test("rejects malformed student numbers", () => {
+test("rejects a student number that is not a year plus 6 digits", () => {
   assert.equal(validateStudentNumber("", CURRENT_YEAR).ok, false);
   assert.equal(validateStudentNumber("2024abc767", CURRENT_YEAR).ok, false);
   assert.equal(validateStudentNumber("20241067", CURRENT_YEAR).ok, false);
+  assert.equal(validateStudentNumber("20241067670", CURRENT_YEAR).ok, false);
+  assert.equal(validateStudentNumber("2024 106767", CURRENT_YEAR).ok, false);
+  assert.equal(validateStudentNumber("２０２４１０６７６７", CURRENT_YEAR).ok, false);
 });
 
-test("accepts a real name with at least two parts", () => {
-  assert.equal(validateStudentName("John Benedict Vida").ok, true);
-  assert.equal(validateStudentName("Maria Dela Cruz-Smith").ok, true);
-  assert.equal(validateStudentName("José Rizal").ok, true);
+test("accepts first and last names inside the length caps", () => {
+  assert.equal(validateFirstName("John Benedict").ok, true);
+  assert.equal(validateLastName("Dela Cruz-Smith").ok, true);
+  assert.equal(validateFirstName("José").ok, true);
 });
 
-test("rejects single-word, numeric and symbol-laden names", () => {
-  assert.equal(validateStudentName("Cher").ok, false);
-  assert.equal(validateStudentName("John123 Smith").ok, false);
-  assert.equal(validateStudentName("John $mith").ok, false);
-  assert.equal(validateStudentName("   ").ok, false);
+test("rejects names outside the caps or with numbers", () => {
+  assert.equal(validateFirstName("J").ok, false);
+  assert.equal(validateFirstName("A".repeat(36)).ok, false);
+  assert.equal(validateLastName("V").ok, false);
+  assert.equal(validateLastName("A".repeat(31)).ok, false);
+  assert.equal(validateFirstName("John2").ok, false);
+  assert.equal(validateLastName("   ").ok, false);
 });
 
-test("accepts a valid program-year", () => {
-  assert.equal(validateProgramYear("CS-3").ok, true);
-  assert.equal(validateProgramYear("BSIT-1").ok, true);
-  assert.equal(validateProgramYear("ABCDE-4").ok, true);
+test("accepts a program and year offered by the department", () => {
+  assert.equal(validateProgramAndYear("SOIT", "BSCS", "3rd Year").ok, true);
+  assert.equal(validateProgramAndYear("SHS-MAKATI", "STEM", "11").ok, true);
 });
 
-test("rejects an out-of-range year level", () => {
-  assert.equal(validateProgramYear("CS-0").ok, false);
-  assert.equal(validateProgramYear("CS-5").ok, false);
+test("rejects a year level that does not belong to the department", () => {
+  assert.equal(validateProgramAndYear("SOIT", "BSCS", "11").ok, false);
+  assert.equal(validateProgramAndYear("SHS-INTRA", "STEM", "1st Year").ok, false);
 });
 
-test("rejects a too-long acronym or bad format", () => {
-  assert.equal(validateProgramYear("ABCDEF-3").ok, false);
-  assert.equal(validateProgramYear("CS3").ok, false);
-  assert.equal(validateProgramYear("CS-").ok, false);
-  assert.equal(validateProgramYear("").ok, false);
+test("rejects a program from another department or a missing choice", () => {
+  assert.equal(validateProgramAndYear("SOIT", "BSN", "1st Year").ok, false);
+  assert.equal(validateProgramAndYear("", "BSCS", "1st Year").ok, false);
+  assert.equal(validateProgramAndYear("SOIT", "", "").ok, false);
 });
